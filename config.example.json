@@ -2,31 +2,54 @@
   "_注释": "复制此文件为 config.json 并填入你的凭据",
 
   "telegram_token": "YOUR_TELEGRAM_BOT_TOKEN",
-  "model_api_key": "YOUR_MODEL_API_KEY",
-
-  "model_provider": "anthropic",
-  "model_name": "claude-sonnet-4-6",
-  "base_url": null,
-
   "authorized_users": [],
 
   "max_tokens": 4096,
   "max_history": 50,
 
-  "_providers": {
-    "anthropic": {
-      "model_provider": "anthropic",
-      "model_name": "claude-sonnet-4-6"
+  "models": [
+    {
+      "_注释": "模型 0 — 主力模型，用于主对话",
+      "name": "主力 Claude Sonnet",
+      "provider": "anthropic",
+      "api_key": "sk-ant-YOUR_KEY_HERE",
+      "model": "claude-sonnet-4-6",
+      "base_url": null,
+      "description": "均衡性能，主要对话使用"
     },
-    "openai": {
-      "model_provider": "openai",
-      "model_name": "gpt-4o",
-      "base_url": null
+    {
+      "_注释": "模型 1 — 快速模型，适合子代理轻量任务",
+      "name": "快速 Claude Haiku",
+      "provider": "anthropic",
+      "api_key": "sk-ant-YOUR_KEY_HERE",
+      "model": "claude-haiku-3-5",
+      "base_url": null,
+      "description": "轻量快速，适合简单并行任务"
     },
+    {
+      "_注释": "模型 2 — 备用/专用模型（可换成任意 OpenAI 兼容 API）",
+      "name": "备用 GPT-4o mini",
+      "provider": "openai",
+      "api_key": "sk-YOUR_OPENAI_KEY",
+      "model": "gpt-4o-mini",
+      "base_url": null,
+      "description": "OpenAI 备用，或替换为其他兼容 API"
+    }
+  ],
+
+  "_兼容旧格式说明": "如果不使用 models 数组，可以用以下旧格式（会自动兼容）",
+  "_旧格式示例": {
+    "model_provider": "anthropic",
+    "model_api_key": "sk-ant-...",
+    "model_name": "claude-sonnet-4-6"
+  },
+
+  "_其他provider示例": {
     "openai_compatible": {
-      "model_provider": "openai",
-      "model_name": "your-model-name",
-      "base_url": "https://your-api-endpoint/v1"
+      "provider": "openai",
+      "api_key": "your-key",
+      "model": "your-model",
+      "base_url": "https://your-endpoint/v1"
     }
   }
 }
