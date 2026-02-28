@@ -36,21 +36,20 @@ printf "${BOLD}  Self-expanding AI Assistant via Telegram  ${G}v${REMOTE_VER}${N
 printf "${DIM}  https://github.com/Adaimade/HydraBot${NC}\n\n"
 
 # ── Risk Warning ──────────────────────────────────────────────
-printf "${Y}${BOLD}⚠️  安全风险提示 / Security Risk Warning${NC}\n"
+printf "${Y}${BOLD}⚠️  安装前请阅读以下风险提示${NC}\n"
 hr
-printf "${Y}"
-printf "  本程序安装后将在你的本地机器上持续运行，拥有以下能力：\n\n"
-printf "  [危险] 执行任意 Python / Shell 代码\n"
-printf "  [危险] 读写本地文件系统中的任何文件\n"
-printf "  [危险] 通过 pip 自动安装 Python 包\n"
-printf "  [危险] 发起对外网络请求\n"
-printf "  [危险] 自我扩展：在运行时创建并加载新工具\n\n"
-printf "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-printf "  [EN] After installation, this program runs on your local\n"
-printf "  machine with code execution, filesystem access, network\n"
-printf "  access, and self-extension capabilities.\n\n"
-printf "  ⚠  ONLY authorize Telegram user IDs you fully trust.\n"
-printf "  ⚠  Keep your config.json and API keys private.\n"
+printf "\n"
+printf "  HydraBot 安装后将在你的本地机器上以服务形式运行。\n"
+printf "  请确认你了解并接受以下内容：\n\n"
+printf "${DIM}"
+printf "    · 可在你的机器上执行 Python / Shell 代码\n"
+printf "    · 可读取和写入本地文件系统中的文件\n"
+printf "    · 可通过 pip 自动下载并安装第三方 Python 包\n"
+printf "    · 可发起对外部服务的网络请求\n"
+printf "    · 可在运行时自行创建并加载新工具（自我扩展）\n\n"
+printf "${NC}"
+printf "  请仅在你信任来源且理解上述权限的情况下继续。\n"
+printf "${DIM}  Only proceed if you trust the source and accept these permissions.${NC}\n\n"
 printf "${NC}"
 hr
 echo ""
@@ -344,16 +343,18 @@ configure_model() {
     fi
 
     printf "  选择 AI Provider:\n"
-    printf "    ${B}1${NC}) Anthropic Claude    (sk-ant-api03-...)\n"
-    printf "    ${B}2${NC}) OpenAI / GPT        (sk-...)\n"
-    printf "    ${B}3${NC}) 自定义 OpenAI 兼容 API  (Groq / DeepSeek / Ollama...)\n"
-    ask "  选择 [1/2/3，默认 1]: "
+    printf "    ${B}1${NC}) Anthropic Claude         (sk-ant-api03-...)\n"
+    printf "    ${B}2${NC}) OpenAI / GPT             (sk-...)\n"
+    printf "    ${B}3${NC}) Google Gemini            (AI Studio API Key)\n"
+    printf "    ${B}4${NC}) 自定义 OpenAI 兼容 API  (Groq / DeepSeek / Ollama...)\n"
+    ask "  选择 [1/2/3/4，默认 1]: "
     read -r _p
 
     local PROVIDER MODEL_DEF BASE_URL="null"
     case "$_p" in
-        2) PROVIDER="openai";    MODEL_DEF="gpt-4o-mini" ;;
-        3) PROVIDER="openai"
+        2) PROVIDER="openai";  MODEL_DEF="gpt-4o" ;;
+        3) PROVIDER="google";  MODEL_DEF="gemini-2.0-flash" ;;
+        4) PROVIDER="openai-compatible"
            ask "  Base URL (如 https://api.groq.com/openai/v1): "
            read -r _bu; _bu="${_bu// /}"
            [[ -n "$_bu" ]] && BASE_URL="\"$_bu\""
@@ -374,7 +375,7 @@ configure_model() {
     if [[ "$PROVIDER" == "anthropic" && ! "$KEY" =~ ^sk-ant ]]; then
         warn "Anthropic key 通常以 sk-ant- 开头，请确认输入正确"
     fi
-    if [[ "$PROVIDER" == "openai" && "$BASE_URL" == "null" && ! "$KEY" =~ ^sk- ]]; then
+    if [[ "$PROVIDER" == "openai" && ! "$KEY" =~ ^sk- ]]; then
         warn "OpenAI key 通常以 sk- 开头，请确认输入正确"
     fi
 

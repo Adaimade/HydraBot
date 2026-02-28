@@ -27,13 +27,13 @@
       "description": "轻量快速，适合简单并行任务"
     },
     {
-      "_注释": "模型 2 — 备用/专用模型（可换成任意 OpenAI 兼容 API）",
-      "name": "备用 GPT-4o mini",
-      "provider": "openai",
-      "api_key": "sk-YOUR_OPENAI_KEY",
-      "model": "gpt-4o-mini",
+      "_注释": "模型 2 — 备用模型，示例使用 Google Gemini（也可换成 GPT / 其他兼容 API）",
+      "name": "Gemini 2.0 Flash",
+      "provider": "google",
+      "api_key": "YOUR_GOOGLE_AI_KEY",
+      "model": "gemini-2.0-flash",
       "base_url": null,
-      "description": "OpenAI 备用，或替换为其他兼容 API"
+      "description": "Google Gemini，快速且支持超长上下文"
     }
   ],
 
@@ -50,6 +50,13 @@
       "api_key": "your-key",
       "model": "your-model",
       "base_url": "https://your-endpoint/v1"
+    },
+    "google_gemini": {
+      "provider": "google",
+      "api_key": "YOUR_GOOGLE_AI_KEY",
+      "model": "gemini-2.0-flash",
+      "base_url": null,
+      "_说明": "base_url 留 null 自动使用 Google AI Studio 端点"
     }
   }
 }

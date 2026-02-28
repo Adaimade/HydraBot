@@ -41,7 +41,7 @@ class _ModelClient:
             except ImportError:
                 raise ImportError("Run: pip install anthropic")
 
-        elif self.provider == "openai":
+        elif self.provider in ("openai", "openai-compatible"):
             try:
                 import openai
                 kwargs: dict = {"api_key": key}
@@ -51,8 +51,24 @@ class _ModelClient:
             except ImportError:
                 raise ImportError("Run: pip install openai")
 
+        elif self.provider == "google":
+            # Google Gemini via OpenAI-compatible endpoint
+            try:
+                import openai
+                self.client = openai.OpenAI(
+                    api_key=key,
+                    base_url=base_url or "https://generativelanguage.googleapis.com/v1beta/openai/",
+                )
+                # Use openai loop internally
+                self.provider = "openai"
+            except ImportError:
+                raise ImportError("Run: pip install openai")
+
         else:
-            raise ValueError(f"Unknown provider: '{self.provider}'. Use 'anthropic' or 'openai'.")
+            raise ValueError(
+                f"Unknown provider: '{self.provider}'. "
+                f"Use 'anthropic', 'openai', 'openai-compatible', or 'google'."
+            )
 
 
 # ─────────────────────────────────────────────────────────────

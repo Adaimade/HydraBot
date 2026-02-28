@@ -210,16 +210,21 @@ if (-not [string]::IsNullOrWhiteSpace($authInput)) {
 
 # Models
 $modelsJson = "["
-$PROVIDERS  = @("anthropic","openai","openai-compatible")
-$DEF_MODELS = @("claude-sonnet-4-5","gpt-4o","gpt-4o-mini")
+$PROVIDERS  = @("anthropic","openai","google","openai-compatible")
+$DEF_MODELS = @("claude-sonnet-4-5","gpt-4o","gemini-2.0-flash","your-model")
+$DEF_NAMES  = @("主力 Claude","快速 GPT","Gemini Flash","自定义模型")
 
 for ($i = 0; $i -lt 3; $i++) {
     Write-Host ""
     $label = if ($i -eq 0) {"主力模型"} elseif ($i -eq 1) {"快速/子代理"} else {"备用模型"}
     Write-Host "  --- 模型 #$i ($label) ---" -ForegroundColor Cyan
-    Write-Host "  Provider [0=anthropic / 1=openai / 2=openai-compatible]:" -ForegroundColor White
+    Write-Host "  Provider:" -ForegroundColor White
+    Write-Host "    0 = Anthropic (Claude)" -ForegroundColor DarkGray
+    Write-Host "    1 = OpenAI (GPT)" -ForegroundColor DarkGray
+    Write-Host "    2 = Google (Gemini)" -ForegroundColor DarkGray
+    Write-Host "    3 = OpenAI-compatible (自定义端点)" -ForegroundColor DarkGray
     $pIdx = Ask "选择 (默认 0)："
-    if ($pIdx -notmatch "^[012]$") { $pIdx = "0" }
+    if ($pIdx -notmatch "^[0123]$") { $pIdx = "0" }
     $provider = $PROVIDERS[$pIdx]
 
     Write-Host "  API Key:" -ForegroundColor White
@@ -231,8 +236,7 @@ for ($i = 0; $i -lt 3; $i++) {
     $modelName = Ask "Model："
     if ([string]::IsNullOrWhiteSpace($modelName)) { $modelName = $defModel }
 
-    $labelNames = @("主力 Claude","快速 Haiku","备用 GPT")
-    $displayName = $labelNames[$i]
+    $displayName = $DEF_NAMES[$pIdx]
 
     $baseUrl = "null"
     if ($provider -eq "openai-compatible") {
