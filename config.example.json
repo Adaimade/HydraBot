@@ -1,0 +1,32 @@
+{
+  "_注释": "复制此文件为 config.json 并填入你的凭据",
+
+  "telegram_token": "YOUR_TELEGRAM_BOT_TOKEN",
+  "model_api_key": "YOUR_MODEL_API_KEY",
+
+  "model_provider": "anthropic",
+  "model_name": "claude-sonnet-4-6",
+  "base_url": null,
+
+  "authorized_users": [],
+
+  "max_tokens": 4096,
+  "max_history": 50,
+
+  "_providers": {
+    "anthropic": {
+      "model_provider": "anthropic",
+      "model_name": "claude-sonnet-4-6"
+    },
+    "openai": {
+      "model_provider": "openai",
+      "model_name": "gpt-4o",
+      "base_url": null
+    },
+    "openai_compatible": {
+      "model_provider": "openai",
+      "model_name": "your-model-name",
+      "base_url": "https://your-api-endpoint/v1"
+    }
+  }
+}

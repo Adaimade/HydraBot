@@ -1,0 +1,33 @@
+# ── 敏感配置（绝对不提交）──
+config.json
+memory.json
+.env
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+env/
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ── 运行时生成 ──
+tools/__pycache__/
+mcp_servers/__pycache__/
+
+# ── 系统文件 ──
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE ──
+.vscode/
+.idea/
+*.swp
+*.swo
