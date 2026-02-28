@@ -16,6 +16,29 @@ function Warn  ($t)  { Yellow "WRN $t" }
 function Err   ($t)  { Red    "ERR $t"; exit 1 }
 function Inf   ($t)  { Cyan   "... $t" }
 
+# Read-Host 在 irm|iex 管道模式下会读到空值，改用 Console 直接读键盘
+function Ask ($prompt) {
+    Write-Host "  $prompt" -NoNewline -ForegroundColor White
+    return [Console]::ReadLine()
+}
+function AskSecret ($prompt) {
+    Write-Host "  $prompt" -NoNewline -ForegroundColor White
+    $ss = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
+        [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR(
+            $( $input = New-Object System.Security.SecureString
+               while ($true) {
+                   $k = [Console]::ReadKey($true)
+                   if ($k.Key -eq 'Enter') { break }
+                   elseif ($k.Key -eq 'Backspace') {
+                       if ($input.Length -gt 0) { $input.RemoveAt($input.Length-1) }
+                   } else { $input.AppendChar($k.KeyChar) }
+               }
+               Write-Host ""
+               $input )
+        ))
+    return $ss
+}
+
 $REPO = "https://raw.githubusercontent.com/Adaimade/HydraBot/main"
 
 # ── Banner ─────────────────────────────────────────────────────
@@ -42,26 +65,26 @@ Write-Host "  https://github.com/Adaimade/HydraBot" -ForegroundColor DarkGray
 Write-Host ""
 
 # ── Risk Warning ───────────────────────────────────────────────
-Write-Host "  ⚠️  安全风险提示 / Security Risk Warning" -ForegroundColor Yellow
-Hr
-Write-Host @"
-  本程序安装后将在你的本地机器上持续运行，拥有以下能力：
-
-  [危险] 执行任意 Python / Shell 代码
-  [危险] 读写本地文件系统中的任何文件
-  [危险] 通过 pip 自动安装 Python 包
-  [危险] 发起对外网络请求
-  [危险] 自我扩展：在运行时创建并加载新工具
-
-  [EN] This program runs locally with code execution,
-  filesystem access, network access & self-extension capabilities.
-  Only run if you trust the source and understand the risks.
-"@ -ForegroundColor Yellow
+Write-Host "  ⚠️  安装前请阅读以下风险提示" -ForegroundColor Yellow
 Hr
 Write-Host ""
-$confirm = Read-Host "  输入 yes 继续安装 / Type 'yes' to continue"
+Write-Host "  HydraBot 安装后将在你的本地机器上以后台服务形式运行。" -ForegroundColor White
+Write-Host "  请确认你了解并接受以下内容：" -ForegroundColor White
+Write-Host ""
+Write-Host "    · 可在你的机器上执行 Python / Shell 代码" -ForegroundColor Gray
+Write-Host "    · 可读取和写入本地文件系统中的文件" -ForegroundColor Gray
+Write-Host "    · 可通过 pip 自动下载并安装第三方 Python 包" -ForegroundColor Gray
+Write-Host "    · 可发起对外部服务的网络请求" -ForegroundColor Gray
+Write-Host "    · 可在运行时自行创建并加载新工具（自我扩展）" -ForegroundColor Gray
+Write-Host ""
+Write-Host "  请仅在你信任来源且理解上述权限的情况下继续。" -ForegroundColor DarkGray
+Write-Host "  Only proceed if you trust the source and accept these permissions." -ForegroundColor DarkGray
+Write-Host ""
+Hr
+Write-Host ""
+$confirm = Ask "输入 yes 继续，其他任意键取消："
 if ($confirm -ne "yes") {
-    Write-Host "  已取消。/ Cancelled." -ForegroundColor DarkGray
+    Write-Host "  已取消。" -ForegroundColor DarkGray
     exit 0
 }
 
@@ -70,7 +93,7 @@ Write-Host ""
 Write-Host "  [1/6] 选择安装目录" -ForegroundColor White
 Hr
 $defaultDir = "$env:USERPROFILE\hydrabot"
-$inputDir = Read-Host "  安装到 [$defaultDir]（直接回车使用默认）"
+$inputDir = Ask "安装到 [$defaultDir]（直接回车使用默认）："
 if ([string]::IsNullOrWhiteSpace($inputDir)) {
     $INSTALL_DIR = $defaultDir
 } else {
@@ -168,14 +191,14 @@ Hr
 Write-Host ""
 Write-Host "  Telegram Bot Token" -ForegroundColor White
 Write-Host "  （从 @BotFather 获取，格式: 1234567890:ABCdef...）" -ForegroundColor DarkGray
-$TG_TOKEN = Read-Host "  Token"
+$TG_TOKEN = Ask "Token："
 if ([string]::IsNullOrWhiteSpace($TG_TOKEN)) { $TG_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN" }
 
 # Authorized users
 Write-Host ""
 Write-Host "  授权用户 Telegram ID（多个用逗号分隔，留空=不限制）" -ForegroundColor White
 Write-Host "  （从 @userinfobot 获取你的 ID）" -ForegroundColor DarkGray
-$authInput = Read-Host "  用户 ID"
+$authInput = Ask "用户 ID："
 
 $authJson = "[]"
 if (-not [string]::IsNullOrWhiteSpace($authInput)) {
@@ -195,17 +218,17 @@ for ($i = 0; $i -lt 3; $i++) {
     $label = if ($i -eq 0) {"主力模型"} elseif ($i -eq 1) {"快速/子代理"} else {"备用模型"}
     Write-Host "  --- 模型 #$i ($label) ---" -ForegroundColor Cyan
     Write-Host "  Provider [0=anthropic / 1=openai / 2=openai-compatible]:" -ForegroundColor White
-    $pIdx = Read-Host "  选择 (默认 0)"
+    $pIdx = Ask "选择 (默认 0)："
     if ($pIdx -notmatch "^[012]$") { $pIdx = "0" }
     $provider = $PROVIDERS[$pIdx]
 
     Write-Host "  API Key:" -ForegroundColor White
-    $apiKey = Read-Host "  Key"
+    $apiKey = Ask "Key："
     if ([string]::IsNullOrWhiteSpace($apiKey)) { $apiKey = "YOUR_MODEL_API_KEY" }
 
     $defModel = $DEF_MODELS[$pIdx]
     Write-Host "  模型名称 [默认: $defModel]:" -ForegroundColor White
-    $modelName = Read-Host "  Model"
+    $modelName = Ask "Model："
     if ([string]::IsNullOrWhiteSpace($modelName)) { $modelName = $defModel }
 
     $labelNames = @("主力 Claude","快速 Haiku","备用 GPT")
@@ -214,7 +237,7 @@ for ($i = 0; $i -lt 3; $i++) {
     $baseUrl = "null"
     if ($provider -eq "openai-compatible") {
         Write-Host "  Base URL (e.g. https://api.example.com/v1):" -ForegroundColor White
-        $bu = Read-Host "  URL"
+        $bu = Ask "URL："
         if (-not [string]::IsNullOrWhiteSpace($bu)) { $baseUrl = """$bu""" }
     }
 
