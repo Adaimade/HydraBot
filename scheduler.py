@@ -3,10 +3,14 @@
 HydraBot — Notification Scheduler
 定時通知排程器，支援一次性和循環通知。
 
+內部時間全部使用 UTC（naive datetime）。
+用戶輸入的絕對時間會依 tz_offset_hours 轉換為 UTC 後存入。
+顯示時再轉回用戶本地時間。
+
 支援格式：
   fire_at:
-    · ISO 8601 datetime 字串  "2026-03-01T15:00:00"
-    · 相對時間               "+30m" | "+2h" | "+1d"
+    · ISO 8601 datetime 字串  "2026-03-01T15:00:00"  （視為用戶本地時間）
+    · 相對時間               "+30m" | "+2h" | "+1d"  （與時區無關）
   repeat:
     · None / "once"           一次性
     · "minutely"              每分鐘
@@ -21,7 +25,7 @@ import uuid
 import threading
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Optional, Union
 
@@ -38,27 +42,47 @@ REPEAT_INTERVALS: dict[str, int] = {
 }
 
 
-def parse_fire_at(when: str) -> datetime:
-    """
-    Parse `when` string into a datetime.
+def utcnow() -> datetime:
+    """回傳目前的 UTC 時間（naive datetime，無 tzinfo）。"""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
-    Accepted formats:
-      "+Nm"  — N minutes from now
-      "+Nh"  — N hours  from now
-      "+Nd"  — N days   from now
-      ISO 8601 — "2026-03-01T15:00:00"
+
+def parse_fire_at(when: str, tz_offset_hours: int = 0) -> datetime:
+    """
+    將 `when` 字串解析為 UTC datetime。
+
+    · 相對格式 (+Nm/+Nh/+Nd)：直接加到 utcnow()，與時區無關。
+    · 絕對格式 (ISO 8601)：視為用戶本地時間，轉換為 UTC：
+        UTC = local - tz_offset_hours
+
+    Args:
+        when: 時間字串
+        tz_offset_hours: 用戶的 UTC 偏移（例如 UTC+8 傳入 8，UTC-5 傳入 -5）
     """
     when = when.strip()
     if when.startswith("+"):
         body = when[1:]
         if body.endswith("m"):
-            return datetime.now() + timedelta(minutes=int(body[:-1]))
+            return utcnow() + timedelta(minutes=int(body[:-1]))
         if body.endswith("h"):
-            return datetime.now() + timedelta(hours=int(body[:-1]))
+            return utcnow() + timedelta(hours=int(body[:-1]))
         if body.endswith("d"):
-            return datetime.now() + timedelta(days=int(body[:-1]))
+            return utcnow() + timedelta(days=int(body[:-1]))
         raise ValueError(f"未知相對格式: {when}（應為 +Nm / +Nh / +Nd）")
-    return datetime.fromisoformat(when)
+    # 絕對時間：用戶本地 → UTC
+    local_dt = datetime.fromisoformat(when)
+    return local_dt - timedelta(hours=tz_offset_hours)
+
+
+def utc_to_local(utc_dt: datetime, tz_offset_hours: int) -> datetime:
+    """UTC datetime → 用戶本地 datetime。"""
+    return utc_dt + timedelta(hours=tz_offset_hours)
+
+
+def tz_label(tz_offset_hours: int) -> str:
+    """將 UTC 偏移轉為顯示字串，例如 8 → 'UTC+8'，-5 → 'UTC-5'。"""
+    sign = "+" if tz_offset_hours >= 0 else ""
+    return f"UTC{sign}{tz_offset_hours}"
 
 
 # ─────────────────────────────────────────────────────────────
@@ -71,18 +95,18 @@ class ScheduledJob:
         job_id: str,
         session_id: tuple,
         message: str,
-        fire_at: datetime,
+        fire_at: datetime,          # UTC
         repeat: Optional[Union[str, int]] = None,
         label: str = "",
     ):
         self.job_id     = job_id
         self.session_id = session_id   # (chat_id, thread_id)
         self.message    = message
-        self.fire_at    = fire_at      # next fire time
+        self.fire_at    = fire_at      # UTC datetime，下次觸發時間
         self.repeat     = repeat       # None | str | int(seconds)
         self.label      = label
         self.active     = True
-        self.created_at = datetime.now()
+        self.created_at = utcnow()
 
     # ── serialisation ──────────────────────────────────────────
 
@@ -100,7 +124,6 @@ class ScheduledJob:
 
     @classmethod
     def from_dict(cls, d: dict) -> "ScheduledJob":
-        # session_id stored as [chat_id, thread_id]
         sid = tuple(d["session_id"])
         job = cls(
             job_id     = d["job_id"],
@@ -117,14 +140,18 @@ class ScheduledJob:
 
     # ── display ────────────────────────────────────────────────
 
-    def status_line(self) -> str:
+    def status_line(self, tz_offset_hours: int = 0) -> str:
+        """格式化一行狀態，時間顯示為用戶本地時間。"""
+        local_dt   = utc_to_local(self.fire_at, tz_offset_hours)
+        tz_str     = tz_label(tz_offset_hours)
         repeat_str = self.repeat if self.repeat else "一次性"
         label_str  = f"[{self.label}] " if self.label else ""
         state_icon = "✅" if self.active else "❌"
+        short_msg  = self.message[:60] + ("…" if len(self.message) > 60 else "")
         return (
             f"{state_icon} `{self.job_id}`  {label_str}\n"
-            f"   下次觸發: `{self.fire_at.strftime('%Y-%m-%d %H:%M:%S')}`  重複: {repeat_str}\n"
-            f"   訊息: {self.message[:60]}{'…' if len(self.message) > 60 else ''}"
+            f"   下次觸發: `{local_dt.strftime('%Y-%m-%d %H:%M:%S')} ({tz_str})`  重複: {repeat_str}\n"
+            f"   訊息: {short_msg}"
         )
 
 
@@ -135,10 +162,11 @@ class ScheduledJob:
 class NotificationScheduler:
     """
     後台執行緒排程器 — 每 5 秒掃描到期通知並發送。
+    所有時間以 UTC 儲存，對比也用 utcnow()。
 
     使用方式：
-      scheduler = NotificationScheduler()           # 在 AgentPool 裡建立
-      scheduler.start(loop, send_func)              # 在 _post_init 裡啟動
+      scheduler = NotificationScheduler()       # 在 AgentPool 裡建立
+      scheduler.start(loop, send_func)          # 在 bot._post_init 裡啟動
     """
 
     def __init__(self):
@@ -177,11 +205,11 @@ class NotificationScheduler:
         self,
         session_id: tuple,
         message: str,
-        fire_at: datetime,
+        fire_at: datetime,              # must be UTC
         repeat: Optional[Union[str, int]] = None,
         label: str = "",
     ) -> str:
-        """新增定時通知，回傳 job_id。"""
+        """新增定時通知，回傳 job_id。fire_at 必須是 UTC。"""
         job_id = f"sched_{uuid.uuid4().hex[:8]}"
         job    = ScheduledJob(job_id, session_id, message, fire_at, repeat, label)
         with self._lock:
@@ -207,14 +235,19 @@ class NotificationScheduler:
             jobs = [j for j in jobs if j.session_id == session_id]
         return [j for j in jobs if j.active]
 
-    def format_jobs_list(self, session_id: Optional[tuple] = None) -> str:
-        """回傳格式化的排程列表字串，供 bot 直接傳送。"""
+    def format_jobs_list(
+        self,
+        session_id: Optional[tuple] = None,
+        tz_offset_hours: int = 0,
+    ) -> str:
+        """回傳格式化的排程列表字串，時間顯示為用戶本地時區。"""
         jobs = self.list_jobs(session_id)
         if not jobs:
             return "📭 目前沒有任何排程通知"
-        lines = [f"⏰ **排程通知** ({len(jobs)} 個)\n"]
+        tz_str = tz_label(tz_offset_hours)
+        lines  = [f"⏰ **排程通知** ({len(jobs)} 個，時間顯示為 {tz_str})\n"]
         for job in sorted(jobs, key=lambda j: j.fire_at):
-            lines.append(job.status_line())
+            lines.append(job.status_line(tz_offset_hours))
         return "\n".join(lines)
 
     # ─────────────────────────────────────────────
@@ -252,9 +285,9 @@ class NotificationScheduler:
     # ─────────────────────────────────────────────
 
     def _run_loop(self):
-        """每 5 秒掃描一次到期的 job 並觸發。"""
+        """每 5 秒掃描一次到期的 job 並觸發（以 UTC 對比）。"""
         while not self._stop_event.wait(timeout=5):
-            now     = datetime.now()
+            now     = utcnow()
             to_fire = []
             with self._lock:
                 for job in self._jobs.values():
@@ -281,8 +314,8 @@ class NotificationScheduler:
                     interval = REPEAT_INTERVALS.get(job.repeat, 86400)
                 else:
                     interval = int(job.repeat)
-                job.fire_at = datetime.now() + timedelta(seconds=interval)
-                logger.debug(f"Job {job.job_id} rescheduled → {job.fire_at}")
+                job.fire_at = utcnow() + timedelta(seconds=interval)
+                logger.debug(f"Job {job.job_id} rescheduled → {job.fire_at} UTC")
             else:
                 job.active = False
                 logger.debug(f"Job {job.job_id} fired (one-shot) → inactive")

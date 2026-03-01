@@ -39,6 +39,10 @@ class TelegramBot:
         self.authorized_users: set[int] = set(config.get("authorized_users", []))
         self.app: Application | None = None
 
+        # Sessions currently in the timezone setup flow
+        # (awaiting a UTC+N input from the user)
+        self._pending_tz: set[tuple] = set()
+
         from agent import AgentPool
         print("🧠 Initializing agent pool...")
         self.pool = AgentPool(config)
@@ -78,6 +82,42 @@ class TelegramBot:
         return user_id in self.authorized_users
 
     # ─────────────────────────────────────────────
+    # Timezone helpers
+    # ─────────────────────────────────────────────
+
+    @staticmethod
+    def _parse_tz_input(text: str) -> int | None:
+        """
+        Parse timezone input from user.
+        Accepts: "UTC+8", "UTC-5", "+8", "-5", "8", "0"
+        Returns UTC offset as int, or None if invalid.
+        Valid range: -12 to +14.
+        """
+        import re
+        text = text.strip().upper()
+        m = re.match(r'^(?:UTC)?([+-]?\d+)$', text)
+        if m:
+            offset = int(m.group(1))
+            if -12 <= offset <= 14:
+                return offset
+        return None
+
+    async def _send_tz_prompt(self, update: Update):
+        """Send the timezone setup prompt message."""
+        await update.message.reply_text(
+            "🌍 **請設定您的時區**\n\n"
+            "這讓我能在正確的時間發送定時通知。\n\n"
+            "請輸入您的 UTC 偏移量，例如：\n"
+            "• `UTC+8`  — 台灣 / 香港 / 中國\n"
+            "• `UTC+9`  — 日本 / 韓國\n"
+            "• `UTC+7`  — 泰國 / 越南\n"
+            "• `UTC+0`  — 英國（冬令）\n"
+            "• `UTC-5`  — 美國東部（冬令）\n\n"
+            "直接輸入 `UTC+8`、`+8` 或純數字 `8` 均可：",
+            parse_mode="Markdown",
+        )
+
+    # ─────────────────────────────────────────────
     # Sub-agent result delivery
     # ─────────────────────────────────────────────
 
@@ -108,8 +148,10 @@ class TelegramBot:
         if not self._ok(update.effective_user.id):
             await update.message.reply_text(UNAUTHORIZED_MSG)
             return
-        name = update.effective_user.first_name
-        n = len(self.pool.model_configs)
+        name       = update.effective_user.first_name
+        n          = len(self.pool.model_configs)
+        session_id = self._session_id(update)
+
         text = (
             f"👋 你好，{name}！我是 HydraBot 🐍\n\n"
             f"运行在你的机器上，配备 **{n} 组模型** + **{len(self.pool.tools) + 4} 个工具**。\n"
@@ -121,6 +163,7 @@ class TelegramBot:
             "/models — 查看/切换模型\n"
             "/tasks — 查看子代理任务与進度\n"
             "/notify — 查看/管理定時通知排程\n"
+            "/timezone — 查看/修改時區設定\n"
             "/status — 系统状态\n\n"
             "⏰ **定時通知**\n"
             "直接告訴我「明天早上 9 點提醒我開會」或「每天通知我查看報告」，\n"
@@ -134,6 +177,11 @@ class TelegramBot:
             "直接发消息开始对话 →"
         )
         await update.message.reply_text(text, parse_mode="Markdown")
+
+        # First-time timezone setup: prompt if not yet configured
+        if self.pool.get_timezone(session_id) is None:
+            self._pending_tz.add(session_id)
+            await self._send_tz_prompt(update)
 
     async def cmd_reset(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._ok(update.effective_user.id):
@@ -192,10 +240,54 @@ class TelegramBot:
             msg = f"✅ 已取消排程 `{job_id}`" if ok else f"❌ 找不到排程 `{job_id}`"
             await update.message.reply_text(msg, parse_mode="Markdown")
         else:
+            tz_offset = self.pool.get_timezone(session_id) or 0
             await self._send(
                 update,
-                self.pool.scheduler.format_jobs_list(session_id=session_id),
+                self.pool.scheduler.format_jobs_list(
+                    session_id=session_id, tz_offset_hours=tz_offset
+                ),
             )
+
+    async def cmd_timezone(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        /timezone           — show current timezone (or prompt to set if missing)
+        /timezone UTC+8     — set timezone for this session
+        /timezone +8        — same
+        /timezone 8         — same
+        """
+        if not self._ok(update.effective_user.id):
+            return
+        session_id = self._session_id(update)
+        args = context.args
+
+        if args:
+            tz = self._parse_tz_input(" ".join(args))
+            if tz is None:
+                await update.message.reply_text(
+                    "❌ 格式不正確\n"
+                    "請使用 `UTC+8`、`+8` 或純數字 `8`（範圍 -12 ~ +14）",
+                    parse_mode="Markdown",
+                )
+                return
+            self.pool.set_timezone(session_id, tz)
+            self._pending_tz.discard(session_id)
+            sign = "+" if tz >= 0 else ""
+            await update.message.reply_text(
+                f"✅ 時區已設定為 **UTC{sign}{tz}**",
+                parse_mode="Markdown",
+            )
+        else:
+            tz = self.pool.get_timezone(session_id)
+            if tz is None:
+                self._pending_tz.add(session_id)
+                await self._send_tz_prompt(update)
+            else:
+                sign = "+" if tz >= 0 else ""
+                await update.message.reply_text(
+                    f"🌍 目前時區: **UTC{sign}{tz}**\n"
+                    f"修改: `/timezone UTC+8`",
+                    parse_mode="Markdown",
+                )
 
     async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._ok(update.effective_user.id):
@@ -218,11 +310,18 @@ class TelegramBot:
             session_label = f"群组 (chat={chat_id})"
 
         active_notifs = len(self.pool.scheduler.list_jobs(session_id=session_id))
+        tz_raw = self.pool.get_timezone(session_id)
+        if tz_raw is not None:
+            sign   = "+" if tz_raw >= 0 else ""
+            tz_str = f"UTC{sign}{tz_raw}"
+        else:
+            tz_str = "未設定（/timezone 設定）"
         text = (
             "🖥️ **系统状态**\n\n"
             f"Python: `{sys.version.split()[0]}`\n"
             f"平台: `{platform.system()} {platform.release()}`\n"
             f"当前会话: `{session_label}`\n"
+            f"时区: `{tz_str}`\n"
             f"对话轮数: `{history_len // 2}` 轮\n"
             f"当前模型: `{m.get('name', m['model'])}` (#{idx})\n"
             f"Provider: `{m['provider']}`\n"
@@ -248,6 +347,28 @@ class TelegramBot:
             return
 
         session_id = self._session_id(update)
+
+        # ── Timezone setup flow ────────────────────────────────────
+        # If this session is awaiting a timezone input, intercept the message.
+        if session_id in self._pending_tz:
+            tz = self._parse_tz_input(text)
+            if tz is not None:
+                self.pool.set_timezone(session_id, tz)
+                self._pending_tz.discard(session_id)
+                sign = "+" if tz >= 0 else ""
+                await update.message.reply_text(
+                    f"✅ 時區已設定為 **UTC{sign}{tz}**\n\n"
+                    f"現在可以開始對話了，直接發消息即可 →",
+                    parse_mode="Markdown",
+                )
+            else:
+                await update.message.reply_text(
+                    "❌ 格式不正確，請輸入如 `UTC+8`、`+8` 或 `8`：",
+                    parse_mode="Markdown",
+                )
+            return
+        # ──────────────────────────────────────────────────────────
+
         typing_task = asyncio.create_task(self._keep_typing(update, context))
 
         try:
@@ -361,13 +482,14 @@ class TelegramBot:
         asyncio.create_task(self._check_updates())
 
         await app.bot.set_my_commands([
-            BotCommand("start",  "显示欢迎消息"),
-            BotCommand("reset",  "清除当前会话历史"),
-            BotCommand("tools",  "列出可用工具"),
-            BotCommand("models", "查看/切换模型"),
-            BotCommand("tasks",  "查看子代理任务"),
-            BotCommand("notify", "查看定時通知排程"),
-            BotCommand("status", "系统状态与会话信息"),
+            BotCommand("start",    "显示欢迎消息"),
+            BotCommand("reset",    "清除当前会话历史"),
+            BotCommand("tools",    "列出可用工具"),
+            BotCommand("models",   "查看/切换模型"),
+            BotCommand("tasks",    "查看子代理任务与進度"),
+            BotCommand("notify",   "查看/管理定時通知排程"),
+            BotCommand("timezone", "查看/設定時區 (UTC+N)"),
+            BotCommand("status",   "系统状态与会话信息"),
         ])
 
     def run(self):
@@ -379,14 +501,15 @@ class TelegramBot:
         )
 
         # /model and /models both handled by cmd_models
-        app.add_handler(CommandHandler("start",  self.cmd_start))
-        app.add_handler(CommandHandler("reset",  self.cmd_reset))
-        app.add_handler(CommandHandler("tools",  self.cmd_tools))
-        app.add_handler(CommandHandler("models", self.cmd_models))
-        app.add_handler(CommandHandler("model",  self.cmd_models))
-        app.add_handler(CommandHandler("tasks",  self.cmd_tasks))
-        app.add_handler(CommandHandler("notify", self.cmd_notify))
-        app.add_handler(CommandHandler("status", self.cmd_status))
+        app.add_handler(CommandHandler("start",    self.cmd_start))
+        app.add_handler(CommandHandler("reset",    self.cmd_reset))
+        app.add_handler(CommandHandler("tools",    self.cmd_tools))
+        app.add_handler(CommandHandler("models",   self.cmd_models))
+        app.add_handler(CommandHandler("model",    self.cmd_models))
+        app.add_handler(CommandHandler("tasks",    self.cmd_tasks))
+        app.add_handler(CommandHandler("notify",   self.cmd_notify))
+        app.add_handler(CommandHandler("timezone", self.cmd_timezone))
+        app.add_handler(CommandHandler("status",   self.cmd_status))
         app.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)
         )

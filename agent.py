@@ -127,6 +127,12 @@ class AgentPool:
         # Notification scheduler (started by bot._post_init)
         self.scheduler = NotificationScheduler()
 
+        # User timezone offsets  { session_id -> UTC offset hours (int) }
+        # e.g. UTC+8 → 8,  UTC-5 → -5
+        self.user_timezones: dict[tuple, int] = {}
+        self._tz_file = Path("timezones.json")
+        self._load_timezones()
+
         # Load tools
         self._load_builtin_tools()
         self._load_dynamic_tools()
@@ -414,8 +420,10 @@ class AgentPool:
             label: str = "",
         ) -> str:
             """Schedule a notification to be sent at a specific time."""
+            from scheduler import utc_to_local, tz_label
+            tz_offset = pool.get_timezone(user_id) or 0
             try:
-                fire_at = parse_fire_at(when)
+                fire_at_utc = parse_fire_at(when, tz_offset_hours=tz_offset)
             except Exception as e:
                 return f"❌ 無法解析時間 `{when}`: {e}"
 
@@ -429,14 +437,16 @@ class AgentPool:
             job_id = pool.scheduler.add_job(
                 session_id=user_id,
                 message=message,
-                fire_at=fire_at,
+                fire_at=fire_at_utc,
                 repeat=repeat or None,
                 label=label,
             )
-            repeat_str = f"，重複: **{repeat}**" if repeat else ""
+            repeat_str  = f"，重複: **{repeat}**" if repeat else ""
+            local_dt    = utc_to_local(fire_at_utc, tz_offset)
+            tz_str      = tz_label(tz_offset)
             return (
                 f"✅ 排程已建立 `{job_id}`{repeat_str}\n"
-                f"觸發時間: `{fire_at.strftime('%Y-%m-%d %H:%M:%S')}`\n"
+                f"觸發時間: `{local_dt.strftime('%Y-%m-%d %H:%M:%S')} ({tz_str})`\n"
                 f"訊息: {message[:80]}"
             )
 
@@ -445,7 +455,7 @@ class AgentPool:
             "description": (
                 "排程一條定時通知，到時自動推送給用戶。\n"
                 "when 格式:\n"
-                "  · ISO 8601: \"2026-03-01T15:00:00\"\n"
+                "  · ISO 8601: \"2026-03-01T15:00:00\"  (用戶本地時間，會自動依時區轉換)\n"
                 "  · 相對時間: \"+30m\" / \"+2h\" / \"+1d\"\n"
                 f"repeat 可選值: {repeat_keys}，或整數秒數（不填 = 只發一次）"
             ),
@@ -458,7 +468,7 @@ class AgentPool:
                     },
                     "when": {
                         "type": "string",
-                        "description": "觸發時間，ISO 8601 或相對格式 +Nm/+Nh/+Nd",
+                        "description": "觸發時間，ISO 8601（用戶本地時間）或相對格式 +Nm/+Nh/+Nd",
                     },
                     "repeat": {
                         "type": "string",
@@ -475,7 +485,10 @@ class AgentPool:
 
         # ── list_notifications ─────────────────────────────────────
         def list_notifications() -> str:
-            return pool.scheduler.format_jobs_list(session_id=user_id)
+            tz_offset = pool.get_timezone(user_id) or 0
+            return pool.scheduler.format_jobs_list(
+                session_id=user_id, tz_offset_hours=tz_offset
+            )
 
         tools["list_notifications"] = ({
             "name": "list_notifications",
@@ -614,8 +627,16 @@ class AgentPool:
             idx = self.user_model.get(user_id, 0)
             cur = self.model_configs[idx % len(self.model_configs)]
             cur_info = f"模型 {idx}: **{cur.get('name', cur['model'])}** ({cur['provider']})"
+            tz_offset = self.get_timezone(user_id)
+            from scheduler import tz_label
+            tz_info = (
+                f"用戶時區: **{tz_label(tz_offset)}**（排程時間以此時區解析）"
+                if tz_offset is not None
+                else "用戶時區: **未設定**（若需排程通知，請先引導用戶用 /timezone 設定）"
+            )
         else:
             cur_info = "（子代理模式）"
+            tz_info  = ""
 
         model_list = "\n".join(
             f"- 模型 {i}: **{m.get('name', m['model'])}** ({m['provider']}/{m['model']}) {m.get('description', '')}"
@@ -626,6 +647,7 @@ class AgentPool:
 
 ## 当前使用
 {cur_info}
+{tz_info}
 
 ## 可用模型池
 {model_list}
@@ -705,6 +727,45 @@ class AgentPool:
         builtin_names = {name for name, _, _ in get_builtin_tools(self)}
         self.tools = {k: v for k, v in self.tools.items() if k in builtin_names}
         self._load_dynamic_tools()
+
+    # ─────────────────────────────────────────────
+    # Timezone management
+    # ─────────────────────────────────────────────
+
+    def get_timezone(self, session_id: tuple) -> int | None:
+        """回傳 session 的 UTC 偏移（小時），未設定回傳 None。"""
+        return self.user_timezones.get(session_id)
+
+    def set_timezone(self, session_id: tuple, offset_hours: int):
+        """設定 session 的時區並持久化。"""
+        self.user_timezones[session_id] = offset_hours
+        self._save_timezones()
+
+    def _load_timezones(self):
+        if not self._tz_file.exists():
+            return
+        try:
+            raw = json.loads(self._tz_file.read_text(encoding="utf-8"))
+            for key_str, offset in raw.items():
+                # 儲存格式: "chat_id:thread_id" 或 "chat_id:None"
+                chat_str, thread_str = key_str.split(":", 1)
+                chat_id   = int(chat_str)
+                thread_id = None if thread_str == "None" else int(thread_str)
+                self.user_timezones[(chat_id, thread_id)] = int(offset)
+        except Exception as e:
+            print(f"⚠️  Failed to load timezones.json: {e}")
+
+    def _save_timezones(self):
+        try:
+            data = {
+                f"{chat_id}:{thread_id}": offset
+                for (chat_id, thread_id), offset in self.user_timezones.items()
+            }
+            self._tz_file.write_text(
+                json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+        except Exception as e:
+            print(f"⚠️  Failed to save timezones.json: {e}")
 
     def list_tools_info(self) -> str:
         # +4 for session-bound tools injected per-session
