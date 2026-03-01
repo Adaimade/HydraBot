@@ -97,11 +97,14 @@ class AgentPool:
         # Shared tool registry  { name -> (schema, callable) }
         self.tools: dict[str, tuple] = {}
 
-        # Conversation history  { user_id -> [messages] }
-        self.conversations: dict[int, list] = {}
+        # Conversation history  { session_id -> [messages] }
+        # session_id = (chat_id, thread_id)  — chat_id is the TG group/private chat,
+        # thread_id is the Telegram Topic ID (None for non-topic chats).
+        # This lets each group / topic maintain a fully independent context.
+        self.conversations: dict[tuple, list] = {}
 
-        # Each user's preferred primary model index (default: 0)
-        self.user_model: dict[int, int] = {}
+        # Each session's preferred primary model index (default: 0)
+        self.user_model: dict[tuple, int] = {}
 
         # Sub-agent task tracking  { task_id -> info_dict }
         self.running_tasks: dict[str, dict] = {}
@@ -158,25 +161,31 @@ class AgentPool:
     # Public chat API
     # ─────────────────────────────────────────────
 
-    def chat(self, user_id: int, message: str) -> str:
-        """Synchronous — call via loop.run_in_executor from bot."""
-        model_idx = self.user_model.get(user_id, 0)
+    def chat(self, session_id: tuple, message: str) -> str:
+        """Synchronous — call via loop.run_in_executor from bot.
+
+        session_id = (chat_id, thread_id)
+          chat_id   : Telegram chat/group ID (unique per private chat or group)
+          thread_id : Telegram Topic/Thread ID, or None for non-topic chats
+        Each unique (chat_id, thread_id) gets its own isolated conversation history.
+        """
+        model_idx = self.user_model.get(session_id, 0)
         client = self.get_client(model_idx)
 
-        if user_id not in self.conversations:
-            self.conversations[user_id] = []
+        if session_id not in self.conversations:
+            self.conversations[session_id] = []
 
-        history = self.conversations[user_id]
+        history = self.conversations[session_id]
         history.append({"role": "user", "content": message})
 
-        # Build session tools (includes user-bound spawn_agent)
-        session_tools = self._session_tools(user_id)
+        # Build session tools (includes session-bound spawn_agent)
+        session_tools = self._session_tools(session_id)
 
         try:
             if client.provider == "anthropic":
-                response = self._anthropic_loop(client, list(history), session_tools, user_id)
+                response = self._anthropic_loop(client, list(history), session_tools, session_id)
             else:
-                response = self._openai_loop(client, list(history), session_tools, user_id)
+                response = self._openai_loop(client, list(history), session_tools, session_id)
         except Exception as e:
             response = f"❌ Agent error: {e}\n```\n{traceback.format_exc()}\n```"
             print(response)
@@ -184,22 +193,22 @@ class AgentPool:
         history.append({"role": "assistant", "content": response})
 
         if len(history) > self.max_history:
-            self.conversations[user_id] = history[-self.max_history:]
+            self.conversations[session_id] = history[-self.max_history:]
 
         return response
 
-    def reset_conversation(self, user_id: int):
-        self.conversations.pop(user_id, None)
+    def reset_conversation(self, session_id: tuple):
+        self.conversations.pop(session_id, None)
 
     # ─────────────────────────────────────────────
     # Model management
     # ─────────────────────────────────────────────
 
-    def switch_model(self, user_id: int, model_idx: int) -> str:
+    def switch_model(self, session_id: tuple, model_idx: int) -> str:
         n = len(self.model_configs)
         if not (0 <= model_idx < n):
             return f"❌ 无效索引，请输入 0–{n - 1}"
-        self.user_model[user_id] = model_idx
+        self.user_model[session_id] = model_idx
         m = self.model_configs[model_idx]
         return (
             f"✅ 已切换到 **模型 {model_idx}**\n"
@@ -207,8 +216,8 @@ class AgentPool:
             f"模型: `{m['model']}` ({m['provider']})"
         )
 
-    def list_models_info(self, user_id: int) -> str:
-        current = self.user_model.get(user_id, 0)
+    def list_models_info(self, session_id: tuple) -> str:
+        current = self.user_model.get(session_id, 0)
         lines = [f"🤖 **可用模型** ({len(self.model_configs)} 组)\n"]
         for i, m in enumerate(self.model_configs):
             tag = "▶️ 当前" if i == current else f"  `{i}` "
@@ -224,8 +233,10 @@ class AgentPool:
     # Sub-agent spawning
     # ─────────────────────────────────────────────
 
-    def spawn_sub_agent(self, user_id: int, task: str, model_index: int) -> str:
-        """Spawn a background sub-agent. Returns immediately."""
+    def spawn_sub_agent(self, session_id: tuple, task: str, model_index: int) -> str:
+        """Spawn a background sub-agent. Returns immediately.
+        session_id = (chat_id, thread_id) — result is delivered back to this session.
+        """
         n = len(self.model_configs)
         model_index = max(0, min(model_index, n - 1))
 
@@ -238,7 +249,7 @@ class AgentPool:
             "model": client.name,
             "model_idx": model_index,
             "status": "running",
-            "user_id": user_id,
+            "session_id": session_id,
         }
 
         pool = self
@@ -253,14 +264,14 @@ class AgentPool:
                         client,
                         [{"role": "user", "content": task}],
                         sub_tools,
-                        user_id=None,  # sub-agent has no persistent user history
+                        session_id=None,  # sub-agent has no persistent session history
                     )
                 else:
                     result = pool._openai_loop(
                         client,
                         [{"role": "user", "content": task}],
                         sub_tools,
-                        user_id=None,
+                        session_id=None,
                     )
 
                 pool.running_tasks[task_id]["status"] = "done"
@@ -277,10 +288,10 @@ class AgentPool:
                     f"错误: {str(e)}"
                 )
 
-            # Deliver result to user via Telegram
+            # Deliver result back to the originating session
             if pool._send_func and pool._loop:
                 asyncio.run_coroutine_threadsafe(
-                    pool._send_func(user_id, msg), pool._loop
+                    pool._send_func(session_id, msg), pool._loop
                 )
 
         self._executor.submit(_run)

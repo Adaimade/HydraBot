@@ -38,6 +38,29 @@ class TelegramBot:
               f"{len(self.pool.tools) + 1} tools loaded\n")
 
     # ─────────────────────────────────────────────
+    # Session ID
+    # ─────────────────────────────────────────────
+
+    def _session_id(self, update: Update) -> tuple:
+        """
+        Returns (chat_id, thread_id) as the unique session key.
+
+        chat_id   — Telegram chat ID (each private chat or group has its own)
+        thread_id — Telegram Topic/Thread ID for supergroups with Topics enabled,
+                    None for regular chats and non-topic messages.
+
+        This means:
+          · Private chat with bot       → one isolated context per user
+          · Group without Topics        → one shared context per group
+          · Group with Topics enabled   → one isolated context per Topic
+        """
+        chat_id = update.effective_chat.id
+        thread_id = None
+        if update.message and getattr(update.message, "is_topic_message", False):
+            thread_id = update.message.message_thread_id
+        return (chat_id, thread_id)
+
+    # ─────────────────────────────────────────────
     # Auth
     # ─────────────────────────────────────────────
 
@@ -50,21 +73,24 @@ class TelegramBot:
     # Sub-agent result delivery
     # ─────────────────────────────────────────────
 
-    async def _send_to_user(self, user_id: int, text: str):
-        """Called by background sub-agents to push results."""
+    async def _send_to_user(self, session_id: tuple, text: str):
+        """Called by background sub-agents to push results back to the originating session."""
         if self.app is None:
             return
+        chat_id, thread_id = session_id
         chunks = self._split(text)
         for chunk in chunks:
+            kwargs: dict = {"chat_id": chat_id, "text": chunk, "parse_mode": "Markdown"}
+            if thread_id:
+                kwargs["message_thread_id"] = thread_id
             try:
-                await self.app.bot.send_message(
-                    chat_id=user_id, text=chunk, parse_mode="Markdown"
-                )
+                await self.app.bot.send_message(**kwargs)
             except Exception:
                 try:
-                    await self.app.bot.send_message(chat_id=user_id, text=chunk)
+                    kwargs.pop("parse_mode", None)
+                    await self.app.bot.send_message(**kwargs)
                 except Exception as e:
-                    print(f"⚠️ Failed to deliver sub-agent result to {user_id}: {e}")
+                    print(f"⚠️ Failed to deliver sub-agent result to {session_id}: {e}")
 
     # ─────────────────────────────────────────────
     # Commands
@@ -82,11 +108,14 @@ class TelegramBot:
             "可以执行代码、管理文件、并行派出子代理——还能创建新工具来扩展自己！\n\n"
             "**命令**\n"
             "/start — 显示此消息\n"
-            "/reset — 清除对话历史\n"
+            "/reset — 清除当前对话历史\n"
             "/tools — 列出可用工具\n"
             "/models — 查看/切换模型\n"
             "/tasks — 查看子代理任务\n"
             "/status — 系统状态\n\n"
+            "💡 **多专案隔离**\n"
+            "每个 Telegram 群组 / Topic 拥有完全独立的对话上下文，\n"
+            "不同专案请使用不同群组或 Topic，彻底避免代码混淆。\n\n"
             "直接发消息开始对话 →"
         )
         await update.message.reply_text(text, parse_mode="Markdown")
@@ -94,8 +123,9 @@ class TelegramBot:
     async def cmd_reset(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._ok(update.effective_user.id):
             return
-        self.pool.reset_conversation(update.effective_user.id)
-        await update.message.reply_text("✅ 对话历史已清除")
+        session_id = self._session_id(update)
+        self.pool.reset_conversation(session_id)
+        await update.message.reply_text("✅ 当前会话的对话历史已清除")
 
     async def cmd_tools(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._ok(update.effective_user.id):
@@ -105,17 +135,17 @@ class TelegramBot:
     async def cmd_models(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
         /models      → list all models
-        /model 1     → switch to model 1
+        /model 1     → switch to model 1 (for this session only)
         """
         if not self._ok(update.effective_user.id):
             return
-        user_id = update.effective_user.id
+        session_id = self._session_id(update)
         args = context.args
 
         if args:
             try:
                 idx = int(args[0])
-                result = self.pool.switch_model(user_id, idx)
+                result = self.pool.switch_model(session_id, idx)
                 await update.message.reply_text(result, parse_mode="Markdown")
             except ValueError:
                 n = len(self.pool.model_configs)
@@ -124,7 +154,7 @@ class TelegramBot:
                     parse_mode="Markdown",
                 )
         else:
-            await self._send(update, self.pool.list_models_info(user_id))
+            await self._send(update, self.pool.list_models_info(session_id))
 
     async def cmd_tasks(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._ok(update.effective_user.id):
@@ -134,17 +164,30 @@ class TelegramBot:
     async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._ok(update.effective_user.id):
             return
-        user_id = update.effective_user.id
-        idx = self.pool.user_model.get(user_id, 0)
+        session_id = self._session_id(update)
+        chat_id, thread_id = session_id
+        idx = self.pool.user_model.get(session_id, 0)
         m = self.pool.model_configs[idx % len(self.pool.model_configs)]
         running = sum(
             1 for t in self.pool.running_tasks.values() if t["status"] == "running"
         )
+        history_len = len(self.pool.conversations.get(session_id, []))
+
+        # Session label
+        if thread_id:
+            session_label = f"群组 Topic (chat={chat_id}, thread={thread_id})"
+        elif chat_id == update.effective_user.id:
+            session_label = "私聊"
+        else:
+            session_label = f"群组 (chat={chat_id})"
+
         text = (
             "🖥️ **系统状态**\n\n"
             f"Python: `{sys.version.split()[0]}`\n"
             f"平台: `{platform.system()} {platform.release()}`\n"
-            f"当前模型: `{m.get('name', m['model'])}` (模型 {idx})\n"
+            f"当前会话: `{session_label}`\n"
+            f"对话轮数: `{history_len // 2}` 轮\n"
+            f"当前模型: `{m.get('name', m['model'])}` (#{idx})\n"
             f"Provider: `{m['provider']}`\n"
             f"模型组数: `{len(self.pool.model_configs)}`\n"
             f"工具总数: `{len(self.pool.tools) + 1}`\n"
@@ -166,12 +209,13 @@ class TelegramBot:
         if not text:
             return
 
+        session_id = self._session_id(update)
         typing_task = asyncio.create_task(self._keep_typing(update, context))
 
         try:
             loop = asyncio.get_running_loop()
             response = await loop.run_in_executor(
-                None, self.pool.chat, user.id, text
+                None, self.pool.chat, session_id, text
             )
         except Exception as e:
             response = f"❌ 内部错误: {e}"
@@ -243,11 +287,11 @@ class TelegramBot:
 
         await app.bot.set_my_commands([
             BotCommand("start",  "显示欢迎消息"),
-            BotCommand("reset",  "清除对话历史"),
+            BotCommand("reset",  "清除当前会话历史"),
             BotCommand("tools",  "列出可用工具"),
             BotCommand("models", "查看/切换模型"),
             BotCommand("tasks",  "查看子代理任务"),
-            BotCommand("status", "系统状态"),
+            BotCommand("status", "系统状态与会话信息"),
         ])
 
     def run(self):
@@ -278,6 +322,7 @@ class TelegramBot:
         print(f"   Models  : {len(self.pool.model_configs)} 组")
         print(f"   Tools   : {len(self.pool.tools) + 1} 个")
         print(f"   Access  : {auth_info}")
+        print(f"   Session : chat_id + thread_id 双维度隔离")
         print(f"   Ctrl+C to stop\n")
 
         app.run_polling(drop_pending_updates=True)
