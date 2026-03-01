@@ -28,18 +28,37 @@ def load_config() -> dict:
         print("   Please fill in your credentials and run again.")
         sys.exit(0)
 
-    config = json.loads(config_path.read_text(encoding="utf-8"))
+    # utf-8-sig handles both UTF-8 with BOM (written by Windows PowerShell)
+    # and regular UTF-8 — strips the BOM transparently if present
+    config = json.loads(config_path.read_text(encoding="utf-8-sig"))
 
     errors = []
+
+    # Check Telegram token
     if config.get("telegram_token") in ("", "YOUR_TELEGRAM_BOT_TOKEN", None):
-        errors.append("telegram_token not set")
-    if config.get("model_api_key") in ("", "YOUR_MODEL_API_KEY", None):
-        errors.append("model_api_key not set")
+        errors.append("telegram_token 未设置")
+
+    # Check model config — support both new (models array) and old (model_api_key) format
+    models = config.get("models", [])
+    if models:
+        # New format: check all models have an api_key
+        bad = [
+            f"模型 #{i} ({m.get('name','?')}) 缺少 api_key"
+            for i, m in enumerate(models)
+            if m.get("api_key") in ("", "YOUR_MODEL_API_KEY", "YOUR_GOOGLE_AI_KEY", None)
+            and "provider" in m  # skip comment-only entries
+        ]
+        errors.extend(bad)
+    else:
+        # Old format fallback
+        if config.get("model_api_key") in ("", "YOUR_MODEL_API_KEY", None):
+            errors.append("model_api_key 未设置")
 
     if errors:
-        print("❌ Config errors in config.json:")
+        print("❌ config.json 配置错误，请先填写：")
         for e in errors:
-            print(f"   - {e}")
+            print(f"   · {e}")
+        print("\n   运行 hydrabot.bat config 或直接编辑 config.json")
         sys.exit(1)
 
     return config

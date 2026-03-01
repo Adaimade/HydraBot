@@ -270,7 +270,12 @@ $configContent = @"
   "max_history": 50
 }
 "@
-$configContent | Set-Content -Path "$INSTALL_DIR\config.json" -Encoding UTF8
+# Write WITHOUT BOM — PowerShell 5.x Set-Content UTF8 adds BOM which breaks Python json parser
+[System.IO.File]::WriteAllText(
+    "$INSTALL_DIR\config.json",
+    $configContent,
+    [System.Text.UTF8Encoding]::new($false)   # $false = no BOM
+)
 Ok "config.json 已写入"
 
 # ── Create hydrabot.bat launcher ──────────────────────────────
