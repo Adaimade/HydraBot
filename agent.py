@@ -2,6 +2,7 @@
 """
 HydraBot — AgentPool
 Manages multiple model clients, shared tools, and parallel sub-agent spawning.
+Includes: scheduled notifications and real-time task progress reporting.
 """
 
 import json
@@ -13,6 +14,8 @@ import concurrent.futures
 import uuid
 from pathlib import Path
 from typing import Any
+
+from scheduler import NotificationScheduler, parse_fire_at, REPEAT_INTERVALS
 
 
 # ─────────────────────────────────────────────────────────────
@@ -119,7 +122,10 @@ class AgentPool:
 
         # Set by bot after startup:  pool._loop / pool._send_func
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._send_func = None   # async (user_id: int, text: str) -> None
+        self._send_func = None   # async (session_id: tuple, text: str) -> None
+
+        # Notification scheduler (started by bot._post_init)
+        self.scheduler = NotificationScheduler()
 
         # Load tools
         self._load_builtin_tools()
@@ -254,10 +260,46 @@ class AgentPool:
 
         pool = self
 
+        def _push(msg: str):
+            """Thread-safe helper: push a message to the originating session."""
+            if pool._send_func and pool._loop:
+                asyncio.run_coroutine_threadsafe(
+                    pool._send_func(session_id, msg), pool._loop
+                )
+
         def _run():
             try:
                 # Sub-agents use only builtin tools (no spawn_agent → no recursion)
                 sub_tools = dict(pool.tools)
+
+                # Inject a session-bound report_progress tool so the LLM can
+                # push intermediate updates without waiting for task completion.
+                def report_progress(message: str) -> str:
+                    pool.running_tasks[task_id]["progress"] = message
+                    _push(
+                        f"📊 **任務進度** `{task_id}`\n"
+                        f"模型: {client.name}\n\n"
+                        f"{message}"
+                    )
+                    return "✅ 進度已推送給用戶"
+
+                sub_tools["report_progress"] = ({
+                    "name": "report_progress",
+                    "description": (
+                        "將目前的任務進度即時推送給用戶。\n"
+                        "在長時間執行的任務中，可定期呼叫此工具讓用戶知道進展。"
+                    ),
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "message": {
+                                "type": "string",
+                                "description": "進度更新訊息（可包含目前完成步驟、百分比、中間結果等）",
+                            }
+                        },
+                        "required": ["message"],
+                    },
+                }, report_progress)
 
                 if client.provider == "anthropic":
                     result = pool._anthropic_loop(
@@ -288,11 +330,8 @@ class AgentPool:
                     f"错误: {str(e)}"
                 )
 
-            # Deliver result back to the originating session
-            if pool._send_func and pool._loop:
-                asyncio.run_coroutine_threadsafe(
-                    pool._send_func(session_id, msg), pool._loop
-                )
+            # Deliver final result back to the originating session
+            _push(msg)
 
         self._executor.submit(_run)
 
@@ -311,6 +350,11 @@ class AgentPool:
             emoji = {"running": "⏳", "done": "✅", "error": "❌"}.get(t["status"], "❓")
             lines.append(f"{emoji} `{t['id']}` — {t['model']}")
             lines.append(f"   {t['task']}")
+            # Show latest progress update if available
+            if t.get("progress") and t["status"] == "running":
+                prog = t["progress"]
+                short = prog[:80] + "…" if len(prog) > 80 else prog
+                lines.append(f"   📊 進度: {short}")
         return "\n".join(lines)
 
     # ─────────────────────────────────────────────
@@ -318,16 +362,21 @@ class AgentPool:
     # ─────────────────────────────────────────────
 
     def _session_tools(self, user_id: int) -> dict:
-        """Shallow-copy tools and inject a user-bound spawn_agent."""
+        """Shallow-copy tools and inject session-bound tools:
+        - spawn_agent      parallel background sub-agents
+        - schedule_notification  schedule a timed message
+        - list_notifications     list active schedules for this session
+        - cancel_notification    cancel a scheduled notification
+        """
         tools = dict(self.tools)
-
-        pool = self
-        n = len(self.model_configs)
+        pool  = self
+        n     = len(self.model_configs)
         model_desc = "\n".join(
             f"  {i}: {m.get('name', m['model'])} — {m.get('description', '')}"
             for i, m in enumerate(self.model_configs)
         )
 
+        # ── spawn_agent ────────────────────────────────────────────
         def spawn_agent(task: str, model_index: int = 1) -> str:
             return pool.spawn_sub_agent(user_id, task, model_index)
 
@@ -335,6 +384,7 @@ class AgentPool:
             "name": "spawn_agent",
             "description": (
                 f"在后台启动子代理，并行处理任务，完成后自动把结果推送给用户。\n"
+                f"子代理支援呼叫 report_progress 即時推送進度。\n"
                 f"可同时启动多个（建议不超过 3 个）。子代理不会再启动子代理。\n"
                 f"可用模型 (model_index):\n{model_desc}"
             ),
@@ -353,6 +403,105 @@ class AgentPool:
                 "required": ["task"],
             },
         }, spawn_agent)
+
+        # ── schedule_notification ──────────────────────────────────
+        repeat_keys = "、".join(REPEAT_INTERVALS.keys())
+
+        def schedule_notification(
+            message: str,
+            when: str,
+            repeat: str = None,
+            label: str = "",
+        ) -> str:
+            """Schedule a notification to be sent at a specific time."""
+            try:
+                fire_at = parse_fire_at(when)
+            except Exception as e:
+                return f"❌ 無法解析時間 `{when}`: {e}"
+
+            # Validate repeat
+            if repeat and repeat not in REPEAT_INTERVALS and not str(repeat).isdigit():
+                return (
+                    f"❌ 無效的 repeat 值: `{repeat}`\n"
+                    f"可用: {repeat_keys}，或整數秒數"
+                )
+
+            job_id = pool.scheduler.add_job(
+                session_id=user_id,
+                message=message,
+                fire_at=fire_at,
+                repeat=repeat or None,
+                label=label,
+            )
+            repeat_str = f"，重複: **{repeat}**" if repeat else ""
+            return (
+                f"✅ 排程已建立 `{job_id}`{repeat_str}\n"
+                f"觸發時間: `{fire_at.strftime('%Y-%m-%d %H:%M:%S')}`\n"
+                f"訊息: {message[:80]}"
+            )
+
+        tools["schedule_notification"] = ({
+            "name": "schedule_notification",
+            "description": (
+                "排程一條定時通知，到時自動推送給用戶。\n"
+                "when 格式:\n"
+                "  · ISO 8601: \"2026-03-01T15:00:00\"\n"
+                "  · 相對時間: \"+30m\" / \"+2h\" / \"+1d\"\n"
+                f"repeat 可選值: {repeat_keys}，或整數秒數（不填 = 只發一次）"
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "要發送的通知內容",
+                    },
+                    "when": {
+                        "type": "string",
+                        "description": "觸發時間，ISO 8601 或相對格式 +Nm/+Nh/+Nd",
+                    },
+                    "repeat": {
+                        "type": "string",
+                        "description": f"循環間隔: {repeat_keys}，或整數秒數。不填則只發一次。",
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "可選標籤，顯示在通知標題旁",
+                    },
+                },
+                "required": ["message", "when"],
+            },
+        }, schedule_notification)
+
+        # ── list_notifications ─────────────────────────────────────
+        def list_notifications() -> str:
+            return pool.scheduler.format_jobs_list(session_id=user_id)
+
+        tools["list_notifications"] = ({
+            "name": "list_notifications",
+            "description": "列出目前會話中所有有效的定時通知排程。",
+            "input_schema": {"type": "object", "properties": {}},
+        }, list_notifications)
+
+        # ── cancel_notification ────────────────────────────────────
+        def cancel_notification(job_id: str) -> str:
+            ok = pool.scheduler.cancel_job(job_id)
+            return f"✅ 已取消排程 `{job_id}`" if ok else f"❌ 找不到排程 `{job_id}`"
+
+        tools["cancel_notification"] = ({
+            "name": "cancel_notification",
+            "description": "取消一個定時通知排程。",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "job_id": {
+                        "type": "string",
+                        "description": "要取消的排程 ID（從 list_notifications 取得）",
+                    }
+                },
+                "required": ["job_id"],
+            },
+        }, cancel_notification)
 
         return tools
 
@@ -456,7 +605,10 @@ class AgentPool:
     # ─────────────────────────────────────────────
 
     def _system_prompt(self, user_id) -> str:
-        tool_list = ", ".join(sorted(self.tools.keys())) + ", spawn_agent"
+        tool_list = (
+            ", ".join(sorted(self.tools.keys()))
+            + ", spawn_agent, schedule_notification, list_notifications, cancel_notification"
+        )
 
         if user_id is not None:
             idx = self.user_model.get(user_id, 0)
@@ -486,6 +638,8 @@ class AgentPool:
 - **扩展自身**：create_tool（热加载）、create_mcp_server、mcp_connect
 - **并行子代理**：spawn_agent — 把子任务派给其他模型，后台并行运行，互不阻塞
 - **持久记忆**：memory.json
+- **定時通知**：schedule_notification / list_notifications / cancel_notification
+- **任务进度**：子代理内可呼叫 report_progress 即時推送進度給用戶
 
 ## spawn_agent 使用策略
 当需要同时处理多件事时，优先考虑 spawn_agent：
@@ -494,6 +648,13 @@ class AgentPool:
 - 复杂/专业任务 → model_index=0（主力模型）或 model_index=2
 - 子代理完成后结果自动推送，不需要等待
 - 子代理内不要再次调用 spawn_agent（防止递归）
+- 子代理可使用 report_progress 在執行途中推送進度更新
+
+## 定時通知使用策略
+- 用戶要求「提醒我...」「XX 時間通知我」→ 使用 schedule_notification
+- when 格式: ISO 8601 或相對 +Nm/+Nh/+Nd
+- 循環通知: repeat="daily" / "hourly" / "weekly"
+- 只需一次: 不填 repeat 即可
 
 ## 当前已加载工具
 {tool_list}
@@ -546,8 +707,8 @@ class AgentPool:
         self._load_dynamic_tools()
 
     def list_tools_info(self) -> str:
-        # +1 for spawn_agent which is injected per-session
-        total = len(self.tools) + 1
+        # +4 for session-bound tools injected per-session
+        total = len(self.tools) + 4
         lines = [f"📦 **可用工具** ({total} 个)\n"]
         for name, (schema, _) in sorted(self.tools.items()):
             desc = schema.get("description", "").split("\n")[0]
@@ -555,6 +716,9 @@ class AgentPool:
                 desc = desc[:77] + "..."
             lines.append(f"• `{name}`: {desc}")
         lines.append(f"• `spawn_agent`: 在后台启动子代理并行处理任务，完成后自动推送结果")
+        lines.append(f"• `schedule_notification`: 排程定時通知，到時自動推送給用戶")
+        lines.append(f"• `list_notifications`: 列出目前會話的所有定時排程")
+        lines.append(f"• `cancel_notification`: 取消一個定時排程")
         return "\n".join(lines)
 
 

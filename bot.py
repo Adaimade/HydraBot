@@ -112,15 +112,22 @@ class TelegramBot:
         n = len(self.pool.model_configs)
         text = (
             f"👋 你好，{name}！我是 HydraBot 🐍\n\n"
-            f"运行在你的机器上，配备 **{n} 组模型** + **{len(self.pool.tools) + 1} 个工具**。\n"
+            f"运行在你的机器上，配备 **{n} 组模型** + **{len(self.pool.tools) + 4} 个工具**。\n"
             "可以执行代码、管理文件、并行派出子代理——还能创建新工具来扩展自己！\n\n"
             "**命令**\n"
             "/start — 显示此消息\n"
             "/reset — 清除当前对话历史\n"
             "/tools — 列出可用工具\n"
             "/models — 查看/切换模型\n"
-            "/tasks — 查看子代理任务\n"
+            "/tasks — 查看子代理任务与進度\n"
+            "/notify — 查看/管理定時通知排程\n"
             "/status — 系统状态\n\n"
+            "⏰ **定時通知**\n"
+            "直接告訴我「明天早上 9 點提醒我開會」或「每天通知我查看報告」，\n"
+            "我會自動排程並在時間到時推送通知。\n\n"
+            "📊 **任務進度**\n"
+            "子代理執行長任務時，可即時回報進度，\n"
+            "用 /tasks 隨時查看最新狀態。\n\n"
             "💡 **多专案隔离**\n"
             "每个 Telegram 群组 / Topic 拥有完全独立的对话上下文，\n"
             "不同专案请使用不同群组或 Topic，彻底避免代码混淆。\n\n"
@@ -169,6 +176,27 @@ class TelegramBot:
             return
         await self._send(update, self.pool.list_tasks_info())
 
+    async def cmd_notify(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        /notify             — list all scheduled notifications for this session
+        /notify cancel <id> — cancel a scheduled notification
+        """
+        if not self._ok(update.effective_user.id):
+            return
+        session_id = self._session_id(update)
+        args = context.args
+
+        if args and args[0].lower() == "cancel" and len(args) >= 2:
+            job_id = args[1]
+            ok = self.pool.scheduler.cancel_job(job_id)
+            msg = f"✅ 已取消排程 `{job_id}`" if ok else f"❌ 找不到排程 `{job_id}`"
+            await update.message.reply_text(msg, parse_mode="Markdown")
+        else:
+            await self._send(
+                update,
+                self.pool.scheduler.format_jobs_list(session_id=session_id),
+            )
+
     async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._ok(update.effective_user.id):
             return
@@ -189,6 +217,7 @@ class TelegramBot:
         else:
             session_label = f"群组 (chat={chat_id})"
 
+        active_notifs = len(self.pool.scheduler.list_jobs(session_id=session_id))
         text = (
             "🖥️ **系统状态**\n\n"
             f"Python: `{sys.version.split()[0]}`\n"
@@ -198,8 +227,9 @@ class TelegramBot:
             f"当前模型: `{m.get('name', m['model'])}` (#{idx})\n"
             f"Provider: `{m['provider']}`\n"
             f"模型组数: `{len(self.pool.model_configs)}`\n"
-            f"工具总数: `{len(self.pool.tools) + 1}`\n"
-            f"子代理运行中: `{running}`"
+            f"工具总数: `{len(self.pool.tools) + 4}`\n"
+            f"子代理运行中: `{running}`\n"
+            f"定時排程: `{active_notifs}` 個"
         )
         await update.message.reply_text(text, parse_mode="Markdown")
 
@@ -320,8 +350,12 @@ class TelegramBot:
         self.app = app
 
         # Wire sub-agent result delivery to this bot instance
-        self.pool._loop = asyncio.get_running_loop()
+        loop = asyncio.get_running_loop()
+        self.pool._loop = loop
         self.pool._send_func = self._send_to_user
+
+        # Start the notification scheduler
+        self.pool.scheduler.start(loop, self._send_to_user)
 
         # Check for updates in background (don't wait)
         asyncio.create_task(self._check_updates())
@@ -332,6 +366,7 @@ class TelegramBot:
             BotCommand("tools",  "列出可用工具"),
             BotCommand("models", "查看/切换模型"),
             BotCommand("tasks",  "查看子代理任务"),
+            BotCommand("notify", "查看定時通知排程"),
             BotCommand("status", "系统状态与会话信息"),
         ])
 
@@ -350,6 +385,7 @@ class TelegramBot:
         app.add_handler(CommandHandler("models", self.cmd_models))
         app.add_handler(CommandHandler("model",  self.cmd_models))
         app.add_handler(CommandHandler("tasks",  self.cmd_tasks))
+        app.add_handler(CommandHandler("notify", self.cmd_notify))
         app.add_handler(CommandHandler("status", self.cmd_status))
         app.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)
