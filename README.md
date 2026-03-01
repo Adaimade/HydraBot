@@ -143,10 +143,13 @@ Copy `config.example.json` and modify:
 | `/reset` | Clear conversation history for current session |
 | `/tools` | List all available tools (including dynamic tools) |
 | `/models` | View available models; `/models N` to switch to model N |
-| `/tasks` | View background sub-agent tasks and live progress |
+| `/tasks` | View background task progress |
 | `/notify` | List scheduled notifications; `/notify cancel <id>` to cancel |
 | `/timezone` | View current timezone; `/timezone UTC+8` to set |
 | `/status` | Show system status (version, timezone, models, tool count, schedule count, etc.) |
+| `/new_agent` | Start the wizard to create a new sub-agent Bot |
+| `/list_agents` | List all registered sub-agent Bots and their status |
+| `/delete_agent [name]` | Delete a sub-agent Bot (offers graveyard archival) |
 
 ---
 
@@ -200,6 +203,97 @@ Bot:  ✅ Schedule created: sched_a1b2c3d4
 
 ---
 
+## Isolation & Agent Architecture
+
+HydraBot provides three levels of isolation to fit different use cases:
+
+### 1. Topics — Conversation isolation only
+
+Use **Telegram group Topics** when you need multiple assistants for different daily scenarios without worrying about files or git.
+
+- Same HydraBot process, same filesystem
+- Each Topic has a fully independent conversation history and memory
+- Zero setup — just enable Topics in your Telegram group and start chatting
+- **Best for:** daily assistance, Q&A, reminders, scheduling across different topics
+
+```
+Group with Topics enabled
+├── Topic "Daily Assistant"  → isolated conversation
+├── Topic "Research"         → isolated conversation
+└── Topic "Schedule"         → isolated conversation
+```
+
+> ⚠️ Topics do **not** isolate the filesystem. If two Topics both run shell commands or git operations in the same directory, they can interfere with each other.
+
+---
+
+### 2. Sub-Agent Bot — Full process isolation
+
+Use `/new_agent` when you need a **dedicated project workspace** with complete isolation from other projects.
+
+- Separate HydraBot process, separate `agents/{name}/` directory, separate Telegram Bot identity
+- All file I/O, git operations, memory, and tools are scoped to `agents/{name}/`
+- **Best for:** software projects, codebases, anything involving git
+
+```
+/new_agent
+  → Bot asks: project folder name (e.g. data-analyzer)
+  → Bot asks: Telegram Bot Token (get one from @BotFather)
+  → Bot creates agents/{name}/ with its own config, starts the process
+  → Add the new Bot to your group — it operates independently
+```
+
+Each sub-agent gets a dedicated `agents/{name}/` folder with its own:
+- `config.json` — token, model settings
+- `memory.json` — persistent memory
+- `timezones.json`, `schedules.json` — isolated scheduling
+- `tools/` — custom tools
+
+Because each instance runs from its own directory, there is **no git or file conflict** between agents.
+
+```
+/delete_agent [name]
+  → Confirms deletion
+  → Offers to visit the Digital Graveyard to leave a memorial
+  → Permanently removes the process and agents/{name}/ folder
+```
+
+---
+
+### 3. Parallel background tasks — Within a single project
+
+Use the **`spawn_agent` tool** (called by the LLM) when one project needs multiple AI models working in parallel on different subtasks.
+
+- Runs as background threads within the same process
+- Each task can use a different AI model
+- Results are pushed back automatically when done
+- **Best for:** large document or research projects — web research, writing, and review running simultaneously
+
+```
+One sub-agent Bot (project workspace)
+  └── LLM calls spawn_agent × 3
+        ├── Model A: web research + data collection
+        ├── Model B: document drafting
+        └── Model C: fact-checking / cross-referencing
+```
+
+> ℹ️ Telegram Bots cannot send messages to or receive messages from other Bots. Parallel collaboration across models is handled within a single bot via `spawn_agent` — not by running multiple bots.
+
+---
+
+### Which to use?
+
+| Scenario | Recommended |
+|----------|-------------|
+| Different daily topics, just need isolated chat | **Topics** |
+| Large document / research project — multiple models working in parallel | **`spawn_agent`** |
+| Deliver a project: build → git commit → deploy to cloud | **Sub-agent Bot** (`/new_agent`) |
+
+**Decision rule of thumb:**
+- Work is *conversational or research-based* with no dedicated git repo → **Topics**
+- Work produces a *deliverable* (code, app, git repo, cloud deployment) → **Sub-agent Bot**
+- Within that project, needs *parallel AI workstreams* (research + writing + review simultaneously) → **`spawn_agent`** inside the Sub-agent Bot
+
 ## Built-in Tools
 
 | Tool | Description |
@@ -214,7 +308,7 @@ Bot:  ✅ Schedule created: sched_a1b2c3d4
 | `read_memory` | Read persistent memory from memory.json |
 | `write_memory` | Write to persistent memory |
 | `create_tool` | Write and hot-reload a new tool (core of self-expansion) |
-| `spawn_agent` | Spawn a named background sub-agent with selectable model to execute tasks in parallel |
+| `spawn_agent` | Spawn a named background task with selectable model (parallel execution) |
 | `schedule_notification` | Create a scheduled notification |
 | `list_notifications` | List all schedules for the current session |
 | `cancel_notification` | Cancel a specific schedule |

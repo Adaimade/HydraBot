@@ -7,6 +7,7 @@ import asyncio
 import logging
 import platform
 import sys
+from pathlib import Path
 from telegram import Update, BotCommand
 from telegram.ext import (
     Application,
@@ -33,6 +34,16 @@ UNAUTHORIZED_MSG = (
 )
 
 
+# ── Wizard state keys ─────────────────────────────────────────────────────────
+_WZ_NEW_NAME  = "new_agent_name"   # awaiting folder/project name
+_WZ_NEW_TOKEN = "new_agent_token"  # awaiting Telegram bot token
+_WZ_DEL_SEL   = "del_agent_sel"   # awaiting which agent to delete (multiple)
+_WZ_DEL_CONF  = "del_agent_conf"  # awaiting yes/no confirmation
+_WZ_DEL_BURY  = "del_agent_bury"  # awaiting yes/no for graveyard
+
+GRAVEYARD_URL = "https://digital-graveyard.zeabur.app/"
+
+
 class TelegramBot:
     def __init__(self, config: dict):
         self.config = config
@@ -42,6 +53,19 @@ class TelegramBot:
         # Sessions currently in the timezone setup flow
         # (awaiting a UTC+N input from the user)
         self._pending_tz: set[tuple] = set()
+
+        # Multi-step wizard state per session
+        # {session_id: {"state": str, "data": dict}}
+        self._wizard: dict[tuple, dict] = {}
+
+        # Sub-agent bot manager (disabled for sub-agent instances themselves)
+        if not config.get("is_sub_agent", False):
+            from sub_agent_manager import SubAgentManager
+            self.sub_agents: SubAgentManager | None = SubAgentManager(
+                str(Path(__file__).parent)
+            )
+        else:
+            self.sub_agents = None
 
         from agent import AgentPool
         print("🧠 Initializing agent pool...")
@@ -152,28 +176,32 @@ class TelegramBot:
         n          = len(self.pool.model_configs)
         session_id = self._session_id(update)
 
+        agent_cmds = (
+            "/new_agent — 建立獨立子代理 Bot\n"
+            "/list_agents — 查看所有子代理\n"
+            "/delete_agent — 刪除子代理\n"
+        ) if self.sub_agents is not None else ""
+
         text = (
             f"👋 你好，{name}！我是 HydraBot 🐍\n\n"
             f"运行在你的机器上，配备 **{n} 组模型** + **{len(self.pool.tools) + 4} 个工具**。\n"
-            "可以执行代码、管理文件、并行派出子代理——还能创建新工具来扩展自己！\n\n"
-            "**命令**\n"
+            "可以执行代码、管理文件、派出背景任務——还能创建新工具来扩展自己！\n\n"
+            "**一般指令**\n"
             "/start — 显示此消息\n"
             "/reset — 清除当前对话历史\n"
             "/tools — 列出可用工具\n"
             "/models — 查看/切换模型\n"
-            "/tasks — 查看子代理任务与進度\n"
+            "/tasks — 查看背景任務與進度\n"
             "/notify — 查看/管理定時通知排程\n"
             "/timezone — 查看/修改時區設定\n"
             "/status — 系统状态\n\n"
-            "⏰ **定時通知**\n"
+            + (f"**子代理 Bot 管理**\n{agent_cmds}\n" if agent_cmds else "")
+            + "⏰ **定時通知**\n"
             "直接告訴我「明天早上 9 點提醒我開會」或「每天通知我查看報告」，\n"
             "我會自動排程並在時間到時推送通知。\n\n"
             "📊 **任務進度**\n"
-            "子代理執行長任務時，可即時回報進度，\n"
+            "背景任務執行時，可即時回報進度，\n"
             "用 /tasks 隨時查看最新狀態。\n\n"
-            "💡 **多专案隔离**\n"
-            "每个 Telegram 群组 / Topic 拥有完全独立的对话上下文，\n"
-            "不同专案请使用不同群组或 Topic，彻底避免代码混淆。\n\n"
             "直接发消息开始对话 →"
         )
         await update.message.reply_text(text, parse_mode="Markdown")
@@ -333,6 +361,258 @@ class TelegramBot:
         await update.message.reply_text(text, parse_mode="Markdown")
 
     # ─────────────────────────────────────────────
+    # Sub-agent bot management commands
+    # ─────────────────────────────────────────────
+
+    async def cmd_new_agent(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """/new_agent — start the sub-agent creation wizard."""
+        if not self._ok(update.effective_user.id):
+            return
+        if self.sub_agents is None:
+            await update.message.reply_text("⛔ 子代理 Bot 無法建立子代理（防止遞迴）")
+            return
+
+        session_id = self._session_id(update)
+        self._wizard[session_id] = {"state": _WZ_NEW_NAME, "data": {}}
+        await update.message.reply_text(
+            "🤖 **建立子代理 Bot**\n\n"
+            "**第一步：** 請輸入子代理的專案名稱。\n"
+            "名稱將作為專案資料夾名稱，只能包含 **英文字母、數字、`-`、`_`**，"
+            "且必須以字母或數字開頭。\n\n"
+            "例如：`my-project`、`data_analyzer`、`reportbot`\n\n"
+            "輸入 `cancel` 可隨時取消：",
+            parse_mode="Markdown",
+        )
+
+    async def cmd_list_agents(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """/list_agents — show all registered sub-agent bots."""
+        if not self._ok(update.effective_user.id):
+            return
+        if self.sub_agents is None:
+            await update.message.reply_text("⛔ 子代理管理功能不可用")
+            return
+        await self._send(update, self.sub_agents.status_text())
+
+    async def cmd_delete_agent(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """/delete_agent [name] — start the deletion wizard."""
+        if not self._ok(update.effective_user.id):
+            return
+        if self.sub_agents is None:
+            await update.message.reply_text("⛔ 子代理管理功能不可用")
+            return
+
+        session_id = self._session_id(update)
+        agents = self.sub_agents.names()
+
+        if not agents:
+            await update.message.reply_text("📋 目前沒有任何子代理 Bot 可刪除")
+            return
+
+        # If name provided as argument, skip selection step
+        if context.args:
+            target = context.args[0]
+            if self.sub_agents.get(target) is None:
+                names_list = "、".join(f"`{n}`" for n in agents)
+                await update.message.reply_text(
+                    f"❌ 找不到子代理 `{target}`\n\n現有：{names_list}",
+                    parse_mode="Markdown",
+                )
+                return
+            await self._start_del_confirm(update, session_id, target)
+            return
+
+        # Single agent: skip to confirm
+        if len(agents) == 1:
+            await self._start_del_confirm(update, session_id, agents[0])
+            return
+
+        # Multiple agents: ask which one
+        self._wizard[session_id] = {"state": _WZ_DEL_SEL, "data": {}}
+        names_list = "\n".join(f"• `{n}`" for n in agents)
+        await update.message.reply_text(
+            f"🗑️ **刪除子代理 Bot**\n\n"
+            f"現有子代理：\n{names_list}\n\n"
+            f"請輸入要刪除的子代理名稱，或輸入 `cancel` 取消：",
+            parse_mode="Markdown",
+        )
+
+    async def _start_del_confirm(self, update: Update, session_id: tuple, name: str):
+        """Enter the delete-confirmation step of the wizard."""
+        info = self.sub_agents.get(name)
+        created = info.get("created_at", "?") if info else "?"
+        self._wizard[session_id] = {
+            "state": _WZ_DEL_CONF,
+            "data": {"target": name},
+        }
+        await update.message.reply_text(
+            f"⚠️ **確認刪除**\n\n"
+            f"子代理：**{name}**\n"
+            f"建立時間：{created}\n\n"
+            f"此操作將永久刪除 `agents/{name}/` 資料夾及所有相關資料（記憶、排程、工具等），"
+            f"且**無法復原**。\n\n"
+            f"輸入 `yes` 確認刪除，`no` 取消：",
+            parse_mode="Markdown",
+        )
+
+    # ─────────────────────────────────────────────
+    # Wizard state machine
+    # ─────────────────────────────────────────────
+
+    async def _handle_wizard(self, update: Update, text: str, session_id: tuple):
+        """Route message to the appropriate wizard step handler."""
+        wz = self._wizard.get(session_id)
+        if not wz:
+            return
+
+        # Universal cancel
+        if text.strip().lower() == "cancel":
+            self._wizard.pop(session_id, None)
+            await update.message.reply_text("✅ 已取消操作")
+            return
+
+        state = wz["state"]
+
+        if state == _WZ_NEW_NAME:
+            await self._wz_new_name(update, text, session_id, wz)
+        elif state == _WZ_NEW_TOKEN:
+            await self._wz_new_token(update, text, session_id, wz)
+        elif state == _WZ_DEL_SEL:
+            await self._wz_del_sel(update, text, session_id, wz)
+        elif state == _WZ_DEL_CONF:
+            await self._wz_del_conf(update, text, session_id, wz)
+        elif state == _WZ_DEL_BURY:
+            await self._wz_del_bury(update, text, session_id, wz)
+
+    async def _wz_new_name(self, update, text, session_id, wz):
+        """Wizard step: validate name, then ask for token."""
+        from sub_agent_manager import SubAgentManager
+        err = SubAgentManager.validate_name(text.strip())
+        if err:
+            await update.message.reply_text(
+                f"❌ {err}\n\n請重新輸入，或輸入 `cancel` 取消：",
+                parse_mode="Markdown",
+            )
+            return
+
+        name = text.strip()
+        if self.sub_agents.get(name):
+            await update.message.reply_text(
+                f"❌ 子代理 `{name}` 已存在，請使用其他名稱：",
+                parse_mode="Markdown",
+            )
+            return
+
+        wz["data"]["name"] = name
+        wz["state"] = _WZ_NEW_TOKEN
+
+        await update.message.reply_text(
+            f"✅ 名稱：**{name}**\n\n"
+            f"**第二步：** 請前往 [@BotFather](https://t.me/BotFather)，"
+            f"建立一個新的 Bot 並取得 Token。\n\n"
+            f"完成後將 Token 貼到這裡：\n"
+            f"（格式：`數字:英數字串`，例如 `7654321:ABCdefGHI`）\n\n"
+            f"輸入 `cancel` 可取消：",
+            parse_mode="Markdown",
+        )
+
+    async def _wz_new_token(self, update, text, session_id, wz):
+        """Wizard step: validate token, create the sub-agent."""
+        from sub_agent_manager import SubAgentManager
+        token = text.strip()
+        err = SubAgentManager.validate_token(token)
+        if err:
+            await update.message.reply_text(
+                f"❌ {err}\n\n請重新輸入，或輸入 `cancel` 取消：",
+                parse_mode="Markdown",
+            )
+            return
+
+        name = wz["data"]["name"]
+        self._wizard.pop(session_id, None)
+
+        await update.message.reply_text("⏳ 正在建立子代理，請稍候…")
+
+        result = self.sub_agents.create(name, token, self.config)
+        await self._send(update, result)
+
+        if "已建立並啟動" in result:
+            await update.message.reply_text(
+                f"📌 **第三步：** 請將新建立的 Bot 加入此群組並給予適當權限。\n\n"
+                f"加入後，子代理 **{name}** 就會開始在群組中運作，"
+                f"擁有完全獨立的對話記憶、工具與排程。\n\n"
+                f"使用 `/list_agents` 查看所有子代理狀態。",
+                parse_mode="Markdown",
+            )
+
+    async def _wz_del_sel(self, update, text, session_id, wz):
+        """Wizard step: select which agent to delete (multi-agent case)."""
+        name = text.strip()
+        if self.sub_agents.get(name) is None:
+            agents = self.sub_agents.names()
+            names_list = "\n".join(f"• `{n}`" for n in agents)
+            await update.message.reply_text(
+                f"❌ 找不到子代理 `{name}`\n\n現有：\n{names_list}\n\n"
+                f"請重新輸入，或輸入 `cancel` 取消：",
+                parse_mode="Markdown",
+            )
+            return
+        await self._start_del_confirm(update, session_id, name)
+
+    async def _wz_del_conf(self, update, text, session_id, wz):
+        """Wizard step: yes/no confirmation before deletion."""
+        answer = text.strip().lower()
+        if answer not in ("yes", "no", "y", "n"):
+            await update.message.reply_text(
+                "請輸入 `yes` 確認刪除，或 `no` / `cancel` 取消：",
+                parse_mode="Markdown",
+            )
+            return
+
+        target = wz["data"]["target"]
+
+        if answer in ("no", "n"):
+            self._wizard.pop(session_id, None)
+            await update.message.reply_text(f"✅ 已取消，子代理 **{target}** 保留不動。",
+                                            parse_mode="Markdown")
+            return
+
+        # Confirmed deletion — ask about graveyard
+        wz["state"] = _WZ_DEL_BURY
+        await update.message.reply_text(
+            f"🪦 **要將 {target} 送往數位墓園嗎？**\n\n"
+            f"數位墓園是一個讓你為退役專案留下紀念的地方。\n"
+            f"你可以在那裡為 **{target}** 留下一段告別文字。\n\n"
+            f"輸入 `yes` 前往墓園（我會提供連結），`no` 直接刪除：",
+            parse_mode="Markdown",
+        )
+
+    async def _wz_del_bury(self, update, text, session_id, wz):
+        """Wizard step: offer graveyard link, then delete."""
+        answer = text.strip().lower()
+        target = wz["data"]["target"]
+        self._wizard.pop(session_id, None)
+
+        if answer in ("yes", "y"):
+            await update.message.reply_text(
+                f"🌿 請前往數位墓園，為 **{target}** 留下最後的記念：\n\n"
+                f"{GRAVEYARD_URL}\n\n"
+                f"填寫時可以提到這是一個 HydraBot 子代理專案，"
+                f"記錄它完成的任務和存在的意義。",
+                parse_mode="Markdown",
+            )
+
+        # Delete regardless of burial choice
+        ok = self.sub_agents.delete(target)
+        if ok:
+            await update.message.reply_text(
+                f"✅ 子代理 **{target}** 已刪除。\n"
+                f"`agents/{target}/` 資料夾及所有相關資料已移除。",
+                parse_mode="Markdown",
+            )
+        else:
+            await update.message.reply_text(f"⚠️ 找不到子代理 {target}，可能已被刪除。")
+
+    # ─────────────────────────────────────────────
     # Message handler
     # ─────────────────────────────────────────────
 
@@ -366,6 +646,12 @@ class TelegramBot:
                     "❌ 格式不正確，請輸入如 `UTC+8`、`+8` 或 `8`：",
                     parse_mode="Markdown",
                 )
+            return
+        # ──────────────────────────────────────────────────────────
+
+        # ── Sub-agent wizard flow ───────────────────────────────────
+        if session_id in self._wizard:
+            await self._handle_wizard(update, text, session_id)
             return
         # ──────────────────────────────────────────────────────────
 
@@ -478,19 +764,30 @@ class TelegramBot:
         # Start the notification scheduler
         self.pool.scheduler.start(loop, self._send_to_user)
 
+        # Start all registered sub-agent bots
+        if self.sub_agents:
+            self.sub_agents.start_all()
+
         # Check for updates in background (don't wait)
         asyncio.create_task(self._check_updates())
 
-        await app.bot.set_my_commands([
-            BotCommand("start",    "显示欢迎消息"),
-            BotCommand("reset",    "清除当前会话历史"),
-            BotCommand("tools",    "列出可用工具"),
-            BotCommand("models",   "查看/切换模型"),
-            BotCommand("tasks",    "查看子代理任务与進度"),
-            BotCommand("notify",   "查看/管理定時通知排程"),
-            BotCommand("timezone", "查看/設定時區 (UTC+N)"),
-            BotCommand("status",   "系统状态与会话信息"),
-        ])
+        commands = [
+            BotCommand("start",        "显示欢迎消息"),
+            BotCommand("reset",        "清除当前会话历史"),
+            BotCommand("tools",        "列出可用工具"),
+            BotCommand("models",       "查看/切换模型"),
+            BotCommand("tasks",        "查看背景任務進度"),
+            BotCommand("notify",       "查看/管理定時通知排程"),
+            BotCommand("timezone",     "查看/設定時區 (UTC+N)"),
+            BotCommand("status",       "系统状态与会话信息"),
+        ]
+        if self.sub_agents is not None:
+            commands += [
+                BotCommand("new_agent",    "建立子代理 Bot"),
+                BotCommand("list_agents",  "查看所有子代理 Bot"),
+                BotCommand("delete_agent", "刪除子代理 Bot"),
+            ]
+        await app.bot.set_my_commands(commands)
 
     def run(self):
         app = (
@@ -501,15 +798,19 @@ class TelegramBot:
         )
 
         # /model and /models both handled by cmd_models
-        app.add_handler(CommandHandler("start",    self.cmd_start))
-        app.add_handler(CommandHandler("reset",    self.cmd_reset))
-        app.add_handler(CommandHandler("tools",    self.cmd_tools))
-        app.add_handler(CommandHandler("models",   self.cmd_models))
-        app.add_handler(CommandHandler("model",    self.cmd_models))
-        app.add_handler(CommandHandler("tasks",    self.cmd_tasks))
-        app.add_handler(CommandHandler("notify",   self.cmd_notify))
-        app.add_handler(CommandHandler("timezone", self.cmd_timezone))
-        app.add_handler(CommandHandler("status",   self.cmd_status))
+        app.add_handler(CommandHandler("start",        self.cmd_start))
+        app.add_handler(CommandHandler("reset",        self.cmd_reset))
+        app.add_handler(CommandHandler("tools",        self.cmd_tools))
+        app.add_handler(CommandHandler("models",       self.cmd_models))
+        app.add_handler(CommandHandler("model",        self.cmd_models))
+        app.add_handler(CommandHandler("tasks",        self.cmd_tasks))
+        app.add_handler(CommandHandler("notify",       self.cmd_notify))
+        app.add_handler(CommandHandler("timezone",     self.cmd_timezone))
+        app.add_handler(CommandHandler("status",       self.cmd_status))
+        if self.sub_agents is not None:
+            app.add_handler(CommandHandler("new_agent",    self.cmd_new_agent))
+            app.add_handler(CommandHandler("list_agents",  self.cmd_list_agents))
+            app.add_handler(CommandHandler("delete_agent", self.cmd_delete_agent))
         app.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)
         )
