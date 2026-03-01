@@ -203,16 +203,37 @@ Bot:  ✅ Schedule created: sched_a1b2c3d4
 
 ---
 
-## Sub-Agent Bots
+## Isolation & Agent Architecture
 
-HydraBot supports two types of agents:
+HydraBot provides three levels of isolation to fit different use cases:
 
-| Type | How | Purpose |
-|------|-----|---------|
-| **Background task** (`spawn_agent` tool) | LLM spawns a thread | Parallel execution of a single task; shares the parent bot's Telegram identity |
-| **Sub-agent Bot** (`/new_agent` command) | Creates a new process with its own Bot Token | Fully independent HydraBot instance with isolated workspace, memory, tools, and Telegram identity |
+### 1. Topics — Conversation isolation only
 
-### Creating a Sub-Agent Bot
+Use **Telegram group Topics** when you need multiple assistants for different daily scenarios without worrying about files or git.
+
+- Same HydraBot process, same filesystem
+- Each Topic has a fully independent conversation history and memory
+- Zero setup — just enable Topics in your Telegram group and start chatting
+- **Best for:** daily assistance, Q&A, reminders, scheduling across different topics
+
+```
+Group with Topics enabled
+├── Topic "Daily Assistant"  → isolated conversation
+├── Topic "Research"         → isolated conversation
+└── Topic "Schedule"         → isolated conversation
+```
+
+> ⚠️ Topics do **not** isolate the filesystem. If two Topics both run shell commands or git operations in the same directory, they can interfere with each other.
+
+---
+
+### 2. Sub-Agent Bot — Full process isolation
+
+Use `/new_agent` when you need a **dedicated project workspace** with complete isolation from other projects.
+
+- Separate HydraBot process, separate `agents/{name}/` directory, separate Telegram Bot identity
+- All file I/O, git operations, memory, and tools are scoped to `agents/{name}/`
+- **Best for:** software projects, codebases, anything involving git
 
 ```
 /new_agent
@@ -230,14 +251,44 @@ Each sub-agent gets a dedicated `agents/{name}/` folder with its own:
 
 Because each instance runs from its own directory, there is **no git or file conflict** between agents.
 
-### Deleting a Sub-Agent Bot
-
 ```
 /delete_agent [name]
   → Confirms deletion
   → Offers to visit the Digital Graveyard to leave a memorial
   → Permanently removes the process and agents/{name}/ folder
 ```
+
+---
+
+### 3. Parallel background tasks — Within a single project
+
+Use the **`spawn_agent` tool** (called by the LLM) when one project needs multiple AI models working in parallel on different subtasks.
+
+- Runs as background threads within the same process
+- Each task can use a different AI model
+- Results are pushed back automatically when done
+- **Best for:** large tasks that can be broken into parallel workstreams
+
+```
+One sub-agent Bot (project workspace)
+  └── LLM calls spawn_agent × 3
+        ├── Model A: code generation
+        ├── Model B: data analysis
+        └── Model C: documentation writing
+```
+
+> ℹ️ Telegram Bots cannot send messages to or receive messages from other Bots. Multi-bot "collaboration" therefore means a human coordinates between bots, or a single bot uses `spawn_agent` to parallelize work internally across different models.
+
+---
+
+### Which to use?
+
+| Scenario | Recommended |
+|----------|-------------|
+| Different daily topics, just need isolated chat | Topics |
+| Working on a git project | Sub-agent Bot (`/new_agent`) |
+| Running parallel subtasks within one project | `spawn_agent` tool |
+| Multiple specialized bots in one group | Sub-agent Bots, human-coordinated |
 
 ## Built-in Tools
 
