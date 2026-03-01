@@ -1,32 +1,34 @@
 # 🐍 HydraBot
 
 > **Self-expanding AI Assistant via Telegram**
-> 運行在你本地機器上的 AI 助手，透過 Telegram 與之對話，能執行程式碼、管理檔案、並行派出子代理，甚至在執行時自行建立新工具來擴展自身能力——就像九頭蛇一樣，砍掉一頭會再長出更多。
+> An AI assistant running on your local machine. Chat with it through Telegram to execute code, manage files, spawn parallel sub-agents, and even create new tools at runtime to expand its own capabilities — just like a hydra: cut off one head and more grow back.
 
 [![Version](https://img.shields.io/badge/version-1.2.0-blue)](VERSION)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
----
-
-## 特色功能
-
-| 功能 | 說明 |
-|------|------|
-| 🤖 **多模型並存** | 同時配置最多 3 組 AI 模型，主力 + 快速 + 備用，對話中可即時切換 |
-| ⚡ **並行子代理** | `spawn_agent` — 把子任務派給其他模型，後台並行執行，互不阻塞 |
-| 🔧 **自我擴展** | `create_tool` — LLM 可在運行時自行撰寫並熱載入新工具 |
-| 💻 **本地執行** | Python / Shell 程式碼直接跑在你的機器上，可讀寫本地檔案 |
-| ⏰ **定時通知** | 排程一次性或循環通知，到時自動推送到 Telegram |
-| 🌍 **時區感知** | 首次使用引導設定 UTC 時區，所有通知時間皆以用戶本地時間顯示 |
-| 🧠 **持久記憶** | `memory.json` — 可跨對話保存任意 key-value 資料 |
-| 📊 **進度推送** | 子代理執行中可即時呼叫 `report_progress` 推送進度更新 |
-| 🏢 **多專案隔離** | 每個 Telegram 群組 / Topic 擁有完全獨立的對話脈絡 |
-| 🔌 **MCP 支援** | 可連接 MCP Server，動態擴充外部工具能力 |
+[中文文件](README.zh-TW.md)
 
 ---
 
-## 快速安裝
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| 🤖 **Multi-Model Support** | Configure up to 3 AI models simultaneously (primary + fast + backup), switchable mid-conversation |
+| ⚡ **Parallel Sub-Agents** | `spawn_agent` — delegate subtasks to other models, running in parallel without blocking |
+| 🔧 **Self-Expansion** | `create_tool` — the LLM can write and hot-reload new tools at runtime |
+| 💻 **Local Execution** | Python / Shell code runs directly on your machine with full filesystem access |
+| ⏰ **Scheduled Notifications** | Schedule one-time or recurring notifications pushed automatically to Telegram |
+| 🌍 **Timezone Awareness** | First-run guide for UTC timezone setup; all notification times shown in user's local time |
+| 🧠 **Persistent Memory** | `memory.json` — store arbitrary key-value data across conversations |
+| 📊 **Progress Reporting** | Sub-agents can call `report_progress` in real-time during execution |
+| 🏢 **Multi-Project Isolation** | Each Telegram group / Topic has completely independent conversation context |
+| 🔌 **MCP Support** | Connect to MCP Servers to dynamically extend tool capabilities |
+
+---
+
+## Quick Install
 
 ### Linux / macOS
 
@@ -34,12 +36,12 @@
 bash <(curl -fsSL https://raw.githubusercontent.com/Adaimade/HydraBot/main/install.sh)
 ```
 
-安裝器會自動完成：
-1. 檢測並安裝 Python 3.9+
-2. 克隆/下載核心檔案
-3. 建立 Python 虛擬環境並安裝依賴
-4. 互動式填寫 Telegram Token、AI API Key
-5. 建立全域 `hydrabot` 指令
+The installer will automatically:
+1. Detect and install Python 3.9+
+2. Clone / download core files
+3. Create a Python virtual environment and install dependencies
+4. Interactively prompt for your Telegram Token and AI API Key
+5. Create the global `hydrabot` command
 
 ### Windows (PowerShell)
 
@@ -47,7 +49,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Adaimade/HydraBot/main/insta
 irm https://raw.githubusercontent.com/Adaimade/HydraBot/main/install.ps1 | iex
 ```
 
-### 手動安裝
+### Manual Install
 
 ```bash
 git clone https://github.com/Adaimade/HydraBot.git
@@ -55,29 +57,29 @@ cd HydraBot
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 cp config.example.json config.json
-# 編輯 config.json 填入憑證
+# Edit config.json to fill in credentials
 python main.py
 ```
 
 ---
 
-## 啟動與管理
+## Start & Manage
 
 ```bash
-hydrabot start          # 啟動 Bot
-hydrabot update         # 更新到最新版本
-hydrabot update --force # 強制更新（即使版本相同）
-hydrabot config         # 編輯 config.json
-hydrabot status         # 查看安裝狀態與配置摘要
-hydrabot logs [N]       # 查看最近 N 行日誌（預設 50）
-hydrabot help           # 顯示完整幫助
+hydrabot start          # Start the bot
+hydrabot update         # Update to latest version
+hydrabot update --force # Force update even if version matches
+hydrabot config         # Edit config.json
+hydrabot status         # View install status and config summary
+hydrabot logs [N]       # View last N lines of logs (default 50)
+hydrabot help           # Show full help
 ```
 
 ---
 
-## 設定檔 config.json
+## Configuration: config.json
 
-複製 `config.example.json` 並修改：
+Copy `config.example.json` and modify:
 
 ```json
 {
@@ -89,148 +91,148 @@ hydrabot help           # 顯示完整幫助
 
   "models": [
     {
-      "name": "主力 Claude Sonnet",
+      "name": "Primary Claude Sonnet",
       "provider": "anthropic",
       "api_key": "sk-ant-...",
       "model": "claude-sonnet-4-6",
-      "description": "均衡性能，主要對話使用"
+      "description": "Balanced performance, main conversation model"
     },
     {
-      "name": "快速 Claude Haiku",
+      "name": "Fast Claude Haiku",
       "provider": "anthropic",
       "api_key": "sk-ant-...",
       "model": "claude-haiku-3-5",
-      "description": "輕量快速，適合並行子代理任務"
+      "description": "Lightweight and fast, ideal for parallel sub-agent tasks"
     },
     {
       "name": "Gemini 2.0 Flash",
       "provider": "google",
       "api_key": "YOUR_GOOGLE_AI_KEY",
       "model": "gemini-2.0-flash",
-      "description": "Google Gemini，超長上下文"
+      "description": "Google Gemini with ultra-long context"
     }
   ]
 }
 ```
 
-### 支援的 AI Provider
+### Supported AI Providers
 
-| Provider | `provider` 值 | 說明 |
-|----------|---------------|------|
+| Provider | `provider` value | Notes |
+|----------|------------------|-------|
 | Anthropic Claude | `anthropic` | Claude Sonnet / Haiku / Opus |
-| OpenAI / GPT | `openai` | GPT-4o、o1 等 |
-| Google Gemini | `google` | Gemini 2.0 Flash 等 |
-| 自定義 OpenAI 相容 API | `openai` + `base_url` | Groq、DeepSeek、Ollama、本地 LLM 等 |
+| OpenAI / GPT | `openai` | GPT-4o, o1, etc. |
+| Google Gemini | `google` | Gemini 2.0 Flash, etc. |
+| Custom OpenAI-compatible API | `openai` + `base_url` | Groq, DeepSeek, Ollama, local LLM, etc. |
 
-### 參數說明
+### Parameters
 
-| 參數 | 說明 |
-|------|------|
-| `telegram_token` | BotFather 取得的 Bot Token |
-| `authorized_users` | 允許使用的 Telegram 用戶 ID 列表（空陣列 = 不限制） |
-| `max_tokens` | 每次回覆最大 token 數（預設 4096） |
-| `max_history` | 保留的對話輪數（預設 50） |
-
----
-
-## Telegram Bot 指令
-
-| 指令 | 說明 |
-|------|------|
-| `/start` | 顯示歡迎訊息，首次使用時引導設定時區 |
-| `/reset` | 清除當前會話的對話歷史 |
-| `/tools` | 列出所有可用工具（含動態工具） |
-| `/models` | 查看可用模型；`/models N` 切換到模型 N |
-| `/tasks` | 查看後台子代理任務與即時進度 |
-| `/notify` | 列出當前會話的定時排程；`/notify cancel <id>` 取消 |
-| `/timezone` | 查看當前時區設定；`/timezone UTC+8` 設定時區 |
-| `/status` | 顯示系統狀態（版本、時區、模型、工具數、排程數等） |
+| Parameter | Description |
+|-----------|-------------|
+| `telegram_token` | Bot Token obtained from BotFather |
+| `authorized_users` | List of authorized Telegram user IDs (empty array = no restriction) |
+| `max_tokens` | Max tokens per response (default 4096) |
+| `max_history` | Number of conversation turns to retain (default 50) |
 
 ---
 
-## 時區設定
+## Telegram Bot Commands
 
-HydraBot 首次使用時會自動引導設定時區：
-
-```
-🌍 請設定您的時區
-
-• UTC+8  — 台灣 / 香港 / 中國
-• UTC+9  — 日本 / 韓國
-• UTC+7  — 泰國 / 越南
-• UTC+0  — 英國（冬令）
-• UTC-5  — 美國東部（冬令）
-
-直接輸入 UTC+8、+8 或純數字 8 均可：
-```
-
-設定後所有定時通知的時間均以**用戶本地時間**顯示。時區資料持久化存於 `timezones.json`，重啟後保留。
-
-```
-/timezone          → 查看目前時區
-/timezone UTC+8    → 設定為 UTC+8
-/timezone +8       → 同上
-/timezone 8        → 同上（範圍 -12 ~ +14）
-```
+| Command | Description |
+|---------|-------------|
+| `/start` | Show welcome message; guide timezone setup on first use |
+| `/reset` | Clear conversation history for current session |
+| `/tools` | List all available tools (including dynamic tools) |
+| `/models` | View available models; `/models N` to switch to model N |
+| `/tasks` | View background sub-agent tasks and live progress |
+| `/notify` | List scheduled notifications; `/notify cancel <id>` to cancel |
+| `/timezone` | View current timezone; `/timezone UTC+8` to set |
+| `/status` | Show system status (version, timezone, models, tool count, schedule count, etc.) |
 
 ---
 
-## 定時通知
+## Timezone Setup
 
-直接用自然語言告訴 Bot，或使用底層工具：
+On first use, HydraBot will automatically guide you through timezone configuration:
 
-**觸發時間格式**
-
-| 格式 | 範例 | 說明 |
-|------|------|------|
-| 相對時間 | `+30m` / `+2h` / `+1d` | N 分鐘 / 小時 / 天後 |
-| 絕對時間 | `2026-03-01T09:00:00` | 用戶本地時間（自動依時區轉換） |
-
-**循環間隔**：`minutely` / `hourly` / `daily` / `weekly` / 整數秒數
-
-**範例對話**：
 ```
-用戶: 每天早上 9 點提醒我喝水
-Bot:  ✅ 排程已建立 sched_a1b2c3d4
-      觸發時間: 2026-03-02 09:00:00 (UTC+8)
-      重複: daily
+🌍 Please set your timezone
+
+• UTC+8  — Taiwan / Hong Kong / China
+• UTC+9  — Japan / Korea
+• UTC+7  — Thailand / Vietnam
+• UTC+0  — UK (winter)
+• UTC-5  — US Eastern (winter)
+
+Enter UTC+8, +8, or just 8:
+```
+
+After setup, all scheduled notification times are displayed in the **user's local time**. Timezone data is persisted in `timezones.json` and retained after restarts.
+
+```
+/timezone          → View current timezone
+/timezone UTC+8    → Set to UTC+8
+/timezone +8       → Same as above
+/timezone 8        → Same as above (range -12 ~ +14)
 ```
 
 ---
 
-## 內建工具一覽
+## Scheduled Notifications
 
-| 工具 | 說明 |
-|------|------|
-| `execute_python` | 執行 Python 程式碼（變數跨次呼叫保留） |
-| `execute_shell` | 執行 Shell 指令，支援 timeout 與 cwd |
-| `read_file` | 讀取本地檔案，支援 offset / limit 分頁 |
-| `write_file` | 寫入或追加本地檔案 |
-| `list_files` | 列出目錄內容（支援 glob pattern） |
-| `install_package` | `pip install` 安裝 Python 套件 |
-| `http_request` | HTTP GET / POST 等網路請求 |
-| `read_memory` | 從 memory.json 讀取持久記憶 |
-| `write_memory` | 寫入持久記憶 |
-| `create_tool` | 撰寫並熱載入新工具（自我擴展核心） |
-| `spawn_agent` | 派出後台子代理並行執行任務 |
-| `schedule_notification` | 建立定時通知排程 |
-| `list_notifications` | 列出當前會話的所有排程 |
-| `cancel_notification` | 取消指定排程 |
+Tell the bot in natural language, or use the underlying tools directly.
+
+**Trigger Time Formats**
+
+| Format | Example | Description |
+|--------|---------|-------------|
+| Relative | `+30m` / `+2h` / `+1d` | N minutes / hours / days from now |
+| Absolute | `2026-03-01T09:00:00` | User's local time (auto timezone conversion) |
+
+**Recurrence**: `minutely` / `hourly` / `daily` / `weekly` / integer seconds
+
+**Example**:
+```
+User: Remind me to drink water every day at 9am
+Bot:  ✅ Schedule created: sched_a1b2c3d4
+      Trigger: 2026-03-02 09:00:00 (UTC+8)
+      Recurrence: daily
+```
 
 ---
 
-## 自我擴展：建立自定義工具
+## Built-in Tools
 
-Bot 可在執行時自行建立工具，也可以手動放置：
+| Tool | Description |
+|------|-------------|
+| `execute_python` | Execute Python code (variables persist across calls) |
+| `execute_shell` | Execute shell commands with timeout and cwd support |
+| `read_file` | Read local files with offset/limit pagination |
+| `write_file` | Write or append to local files |
+| `list_files` | List directory contents (supports glob patterns) |
+| `install_package` | Install Python packages via `pip install` |
+| `http_request` | HTTP GET / POST and other network requests |
+| `read_memory` | Read persistent memory from memory.json |
+| `write_memory` | Write to persistent memory |
+| `create_tool` | Write and hot-reload a new tool (core of self-expansion) |
+| `spawn_agent` | Spawn a background sub-agent to execute tasks in parallel |
+| `schedule_notification` | Create a scheduled notification |
+| `list_notifications` | List all schedules for the current session |
+| `cancel_notification` | Cancel a specific schedule |
+
+---
+
+## Self-Expansion: Creating Custom Tools
+
+The bot can create tools at runtime, or you can place them manually:
 
 ```
 HydraBot/
 └── tools/
-    ├── my_tool.py      ← 自定義工具
-    └── weather.py      ← 另一個工具
+    ├── my_tool.py
+    └── weather.py
 ```
 
-工具格式：
+Tool format:
 
 ```python
 # tools/hello.py
@@ -240,11 +242,11 @@ def get_tools():
 
     schema = {
         "name": "say_hello",
-        "description": "向某人打招呼",
+        "description": "Greet someone by name",
         "input_schema": {
             "type": "object",
             "properties": {
-                "name": {"type": "string", "description": "對方名字"}
+                "name": {"type": "string", "description": "The person's name"}
             },
             "required": ["name"]
         }
@@ -254,49 +256,50 @@ def get_tools():
 
 ---
 
-## 多專案隔離
+## Multi-Project Isolation
 
-每個 **Telegram 群組** 或 **Topic（話題）** 擁有完全獨立的：
-- 對話歷史
-- 時區設定
-- 定時排程
-- Python 執行環境
+Each **Telegram group** or **Topic** has completely independent:
 
-建議不同專案使用不同群組或 Topic，徹底避免脈絡污染。
+- Conversation history
+- Timezone settings
+- Scheduled notifications
+- Python execution environment
+
+Use different groups or Topics for different projects to avoid context contamination.
 
 ---
 
-## 更新
+## Update
 
 ```bash
 hydrabot update
 ```
 
-更新器會下載最新的核心檔案，不影響 `config.json`、`tools/`、`memory.json` 等用戶數據。
+Downloads the latest core files without affecting user data (`config.json`, `tools/`, `memory.json`).
 
 ---
 
-## 系統需求
+## System Requirements
 
 - Python 3.9+
-- Telegram Bot Token（[@BotFather](https://t.me/BotFather)）
-- 至少一個 AI Provider 的 API Key
-- 網路連接
+- Telegram Bot Token ([@BotFather](https://t.me/BotFather))
+- API Key from at least one AI Provider
+- Internet connection
 
 ---
 
-## 安全說明
+## Security Notice
 
-HydraBot 會在你的本機執行 AI 生成的程式碼。請注意：
+HydraBot executes AI-generated code on your local machine. Please note:
 
-- 可執行任意 Python / Shell 指令
-- 可讀寫本地檔案系統
-- 可透過 pip 安裝第三方套件
-- 可發起外部網路請求
-- **強烈建議設定 `authorized_users`，限制授權用戶**
+- Can execute arbitrary Python / Shell commands
+- Can read and write to the local filesystem
+- Can install third-party packages via pip
+- Can make outbound network requests
+- **It is strongly recommended to set `authorized_users` to restrict access**
 
 ---
 
-## 授權
+## License
 
-MIT License — 歡迎 Fork 與貢獻。
+MIT License — Forks and contributions are welcome.
