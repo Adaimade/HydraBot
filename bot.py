@@ -285,6 +285,36 @@ class TelegramBot:
     # Startup
     # ─────────────────────────────────────────────
 
+    async def _check_updates(self):
+        """
+        Check for updates from GitHub in background.
+        Compares local VERSION with remote VERSION file.
+        Does not block startup; failures are silent.
+        """
+        try:
+            import requests
+            from pathlib import Path
+
+            # Fetch latest VERSION from GitHub
+            url = "https://raw.githubusercontent.com/Adaimade/HydraBot/main/VERSION"
+            response = requests.get(url, timeout=3)
+            response.raise_for_status()
+            latest = response.text.strip()
+
+            # Read local version
+            version_file = Path(__file__).parent / "VERSION"
+            if version_file.exists():
+                current = version_file.read_text().strip()
+
+                # Compare versions
+                if latest != current:
+                    print(f"\n⚠️  新版本可用！({current} → {latest})")
+                    print(f"   运行以下命令更新:")
+                    print(f"   hydrabot update\n")
+        except Exception:
+            # Silently fail - don't interrupt bot startup
+            pass
+
     async def _post_init(self, app: Application):
         """Called once after app is built, before polling starts."""
         self.app = app
@@ -292,6 +322,9 @@ class TelegramBot:
         # Wire sub-agent result delivery to this bot instance
         self.pool._loop = asyncio.get_running_loop()
         self.pool._send_func = self._send_to_user
+
+        # Check for updates in background (don't wait)
+        asyncio.create_task(self._check_updates())
 
         await app.bot.set_my_commands([
             BotCommand("start",  "显示欢迎消息"),
