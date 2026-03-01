@@ -267,17 +267,17 @@ Use the **`spawn_agent` tool** (called by the LLM) when one project needs multip
 - Runs as background threads within the same process
 - Each task can use a different AI model
 - Results are pushed back automatically when done
-- **Best for:** large tasks that can be broken into parallel workstreams
+- **Best for:** large document or research projects — web research, writing, and review running simultaneously
 
 ```
 One sub-agent Bot (project workspace)
   └── LLM calls spawn_agent × 3
-        ├── Model A: code generation
-        ├── Model B: data analysis
-        └── Model C: documentation writing
+        ├── Model A: web research + data collection
+        ├── Model B: document drafting
+        └── Model C: fact-checking / cross-referencing
 ```
 
-> ℹ️ Telegram Bots cannot send messages to or receive messages from other Bots. Multi-bot "collaboration" therefore means a human coordinates between bots, or a single bot uses `spawn_agent` to parallelize work internally across different models.
+> ℹ️ Telegram Bots cannot send messages to or receive messages from other Bots. Parallel collaboration across models is handled within a single bot via `spawn_agent` — not by running multiple bots.
 
 ---
 
@@ -285,10 +285,14 @@ One sub-agent Bot (project workspace)
 
 | Scenario | Recommended |
 |----------|-------------|
-| Different daily topics, just need isolated chat | Topics |
-| Working on a git project | Sub-agent Bot (`/new_agent`) |
-| Running parallel subtasks within one project | `spawn_agent` tool |
-| Multiple specialized bots in one group | Sub-agent Bots, human-coordinated |
+| Different daily topics, just need isolated chat | **Topics** |
+| Large document / research project — multiple models working in parallel | **`spawn_agent`** |
+| Deliver a project: build → git commit → deploy to cloud | **Sub-agent Bot** (`/new_agent`) |
+
+**Decision rule of thumb:**
+- Work is *conversational or research-based* with no dedicated git repo → **Topics**
+- Work produces a *deliverable* (code, app, git repo, cloud deployment) → **Sub-agent Bot**
+- Within that project, needs *parallel AI workstreams* (research + writing + review simultaneously) → **`spawn_agent`** inside the Sub-agent Bot
 
 ## Built-in Tools
 
