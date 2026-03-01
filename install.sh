@@ -267,7 +267,7 @@ if [[ -d "$INSTALL_DIR" ]]; then
     [[ "$_ow" =~ ^[Nn]$ ]] && { printf "  ${R}已取消。${NC}\n"; exit 0; }
 fi
 
-mkdir -p "$INSTALL_DIR"/{tools,mcp_servers}
+mkdir -p "$INSTALL_DIR"/{tools,mcp_servers,scripts}
 export INSTALL_DIR
 ok "安装目录: $INSTALL_DIR"
 echo ""
@@ -276,7 +276,7 @@ echo ""
 # [3/6]  下载核心文件
 # ══════════════════════════════════════════════════════════════
 step "[3/6] 下载核心文件"
-CORE_FILES=(agent.py bot.py main.py tools_builtin.py requirements.txt update.sh hydrabot VERSION)
+CORE_FILES=(agent.py bot.py main.py tools_builtin.py requirements.txt scripts/update.sh hydrabot VERSION)
 FAILED_DL=()
 for f in "${CORE_FILES[@]}"; do
     printf "  %-28s " "$f"
@@ -287,7 +287,7 @@ for f in "${CORE_FILES[@]}"; do
         FAILED_DL+=("$f")
     fi
 done
-chmod +x "$INSTALL_DIR/update.sh" "$INSTALL_DIR/hydrabot" 2>/dev/null || true
+chmod +x "$INSTALL_DIR/scripts/update.sh" "$INSTALL_DIR/hydrabot" 2>/dev/null || true
 [[ ${#FAILED_DL[@]} -gt 0 ]] && warn "下载失败: ${FAILED_DL[*]}（如已存在旧版则继续）"
 echo ""
 
