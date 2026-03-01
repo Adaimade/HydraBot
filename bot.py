@@ -24,6 +24,14 @@ logger = logging.getLogger(__name__)
 
 MAX_MSG = 4096
 
+UNAUTHORIZED_MSG = (
+    "⛔ 未授权 / Unauthorized\n\n"
+    "你没有使用此 Bot 的权限。\n"
+    "如需授权，请联系 Bot 管理员。\n\n"
+    "🐍 想自己部署一个？\n"
+    "https://github.com/Adaimade/HydraBot"
+)
+
 
 class TelegramBot:
     def __init__(self, config: dict):
@@ -98,7 +106,7 @@ class TelegramBot:
 
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._ok(update.effective_user.id):
-            await update.message.reply_text("⛔ 未授权")
+            await update.message.reply_text(UNAUTHORIZED_MSG)
             return
         name = update.effective_user.first_name
         n = len(self.pool.model_configs)
@@ -202,7 +210,7 @@ class TelegramBot:
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         if not self._ok(user.id):
-            await update.message.reply_text("⛔ 未授权")
+            await update.message.reply_text(UNAUTHORIZED_MSG)
             return
 
         text = update.message.text
