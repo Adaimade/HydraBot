@@ -1,6 +1,6 @@
 # ═══════════════════════════════════════════════════════════════
 #   HydraBot Updater (PowerShell)
-#   Usage:  powershell -ExecutionPolicy Bypass -File update.ps1
+#   Usage:  powershell -ExecutionPolicy Bypass -File scripts\update.ps1
 # ═══════════════════════════════════════════════════════════════
 $ErrorActionPreference = "Stop"
 $ProgressPreference    = "SilentlyContinue"
@@ -20,7 +20,7 @@ function Inf   ($t)  { Cyan   "ℹ $t" }
 $REPO = "https://raw.githubusercontent.com/Adaimade/HydraBot/main"
 
 # ── Detect install directory ───────────────────────────────────
-$SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
+$SCRIPT_DIR = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $SCRIPT_DIR
 
 # Verify we're in a HydraBot directory
@@ -48,14 +48,14 @@ Inf "最新版本: $REMOTE_VER"
 if ($LOCAL_VER -eq $REMOTE_VER -and $LOCAL_VER -ne "unknown") {
     Write-Host ""
     Green "✨ 已是最新版本！"
-    DGray "如需强制更新，请运行: powershell -ExecutionPolicy Bypass -File update.ps1 -Force"
+    DGray "如需强制更新，请运行: powershell -ExecutionPolicy Bypass -File scripts\update.ps1 -Force"
     Write-Host ""
     if ($args -notcontains "-Force") { exit 0 }
 }
 
 Write-Host ""
 Yellow "即将更新以下核心文件（config.json / 自定义 tools / memory 不受影响）:"
-Write-Host "  agent.py  bot.py  main.py  tools_builtin.py  requirements.txt  update.ps1  hydrabot.bat  VERSION" -ForegroundColor DarkGray
+Write-Host "  agent.py  bot.py  main.py  tools_builtin.py  requirements.txt  scripts\update.ps1  hydrabot.bat  VERSION" -ForegroundColor DarkGray
 Write-Host ""
 
 $confirm = Read-Host "继续更新？[Y/n]"
@@ -82,9 +82,10 @@ $OLD_TOOLS = if (Test-Path "tools_builtin.py") {
 Write-Host "  📥 下载更新..."
 Hr
 
-$CORE_FILES = @("agent.py","bot.py","main.py","tools_builtin.py","requirements.txt","update.ps1","hydrabot.bat","VERSION")
+$CORE_FILES = @("agent.py","bot.py","main.py","tools_builtin.py","requirements.txt","scripts/update.ps1","hydrabot.bat","VERSION")
 $FAILED = @()
 
+New-Item -ItemType Directory -Force -Path "scripts" | Out-Null
 foreach ($f in $CORE_FILES) {
     Write-Host "  $($f.PadRight(30))" -NoNewline
     try {

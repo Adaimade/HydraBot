@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Change to the HydraBot root (parent of scripts/)
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
 echo "🐍 HydraBot - Self-expanding AI Assistant via Telegram"
 echo "======================================================="
 
