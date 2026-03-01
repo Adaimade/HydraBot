@@ -142,7 +142,7 @@ Write-Host ""
 Write-Host "  [3/6] 下载核心文件" -ForegroundColor White
 Hr
 
-$coreFiles = @("agent.py","bot.py","main.py","tools_builtin.py","requirements.txt","update.sh","hydrabot","VERSION")
+$coreFiles = @("agent.py","bot.py","main.py","tools_builtin.py","requirements.txt","update.sh","update.ps1","hydrabot","hydrabot.bat","VERSION")
 $failed = @()
 foreach ($f in $coreFiles) {
     Write-Host "  $($f.PadRight(30))" -NoNewline
@@ -278,17 +278,17 @@ $configContent = @"
 )
 Ok "config.json 已写入"
 
-# ── Create hydrabot.bat launcher ──────────────────────────────
+# ── Setup launcher ────────────────────────────────────────────
 Write-Host ""
-Write-Host "  [6/6] 创建启动脚本" -ForegroundColor White
+Write-Host "  [6/6] 设置启动脚本" -ForegroundColor White
 Hr
 
-$batContent = @"
-@echo off
-cd /d "$INSTALL_DIR"
-"$PY" main.py %*
-"@
-$batContent | Set-Content -Path "$INSTALL_DIR\hydrabot.bat" -Encoding ASCII
+# hydrabot.bat 已从 GitHub 下载，只需确保它可执行
+if (Test-Path "$INSTALL_DIR\hydrabot.bat") {
+    Ok "hydrabot.bat 已就绪"
+} else {
+    Warn "hydrabot.bat 未找到，请手动检查下载"
+}
 
 # Add to PATH (user scope)
 $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
@@ -309,13 +309,16 @@ Hr
 Write-Host ""
 Write-Host "  ✅  HydraBot 安装完成！" -ForegroundColor Green
 Write-Host ""
-Write-Host "  启动命令:" -ForegroundColor White
+Write-Host "  启动 Bot:" -ForegroundColor White
+Write-Host "    hydrabot start" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "  或直接运行:" -ForegroundColor White
 Write-Host "    cd $INSTALL_DIR" -ForegroundColor Cyan
 Write-Host "    $PY main.py" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  或（重开终端后生效）:" -ForegroundColor White
-Write-Host "    hydrabot.bat" -ForegroundColor Cyan
-Write-Host ""
 Write-Host "  更新命令:" -ForegroundColor White
-Write-Host "    bash $INSTALL_DIR\update.sh" -ForegroundColor Cyan
+Write-Host "    hydrabot update" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "  查看帮助:" -ForegroundColor White
+Write-Host "    hydrabot help" -ForegroundColor Cyan
 Write-Host ""
