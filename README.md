@@ -214,7 +214,7 @@ Bot:  ✅ Schedule created: sched_a1b2c3d4
 | `read_memory` | Read persistent memory from memory.json |
 | `write_memory` | Write to persistent memory |
 | `create_tool` | Write and hot-reload a new tool (core of self-expansion) |
-| `spawn_agent` | Spawn a background sub-agent to execute tasks in parallel |
+| `spawn_agent` | Spawn a named background sub-agent with selectable model to execute tasks in parallel |
 | `schedule_notification` | Create a scheduled notification |
 | `list_notifications` | List all schedules for the current session |
 | `cancel_notification` | Cancel a specific schedule |

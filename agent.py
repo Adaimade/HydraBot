@@ -245,18 +245,21 @@ class AgentPool:
     # Sub-agent spawning
     # ─────────────────────────────────────────────
 
-    def spawn_sub_agent(self, session_id: tuple, task: str, model_index: int) -> str:
+    def spawn_sub_agent(self, session_id: tuple, task: str, model_index: int, name: str = "") -> str:
         """Spawn a background sub-agent. Returns immediately.
         session_id = (chat_id, thread_id) — result is delivered back to this session.
+        name — optional human-readable label for this sub-agent.
         """
         n = len(self.model_configs)
         model_index = max(0, min(model_index, n - 1))
 
         client = self.get_client(model_index)
         task_id = f"sub_{uuid.uuid4().hex[:6]}"
+        display_name = name.strip() if name and name.strip() else task_id
 
         self.running_tasks[task_id] = {
             "id": task_id,
+            "name": display_name,
             "task": task[:60] + ("…" if len(task) > 60 else ""),
             "model": client.name,
             "model_idx": model_index,
@@ -283,8 +286,8 @@ class AgentPool:
                 def report_progress(message: str) -> str:
                     pool.running_tasks[task_id]["progress"] = message
                     _push(
-                        f"📊 **任務進度** `{task_id}`\n"
-                        f"模型: {client.name}\n\n"
+                        f"📊 **{display_name}** 進度更新\n"
+                        f"模型: {client.name} | `{task_id}`\n\n"
                         f"{message}"
                     )
                     return "✅ 進度已推送給用戶"
@@ -324,16 +327,16 @@ class AgentPool:
 
                 pool.running_tasks[task_id]["status"] = "done"
                 msg = (
-                    f"🤖 **子代理完成** `{task_id}`\n"
-                    f"模型: {client.name}\n\n"
+                    f"🤖 **{display_name}** 已完成\n"
+                    f"模型: {client.name} | `{task_id}`\n\n"
                     f"{result}"
                 )
             except Exception as e:
                 pool.running_tasks[task_id]["status"] = "error"
                 msg = (
-                    f"❌ **子代理失败** `{task_id}`\n"
-                    f"模型: {client.name}\n"
-                    f"错误: {str(e)}"
+                    f"❌ **{display_name}** 執行失敗\n"
+                    f"模型: {client.name} | `{task_id}`\n"
+                    f"錯誤: {str(e)}"
                 )
 
             # Deliver final result back to the originating session
@@ -342,19 +345,22 @@ class AgentPool:
         self._executor.submit(_run)
 
         return (
-            f"✅ 子代理已启动 `{task_id}`\n"
+            f"✅ 子代理 **{display_name}** 已啟動 (`{task_id}`)\n"
             f"模型: **{client.name}**\n"
-            f"任务: {task[:80]}\n\n"
-            f"⏳ 后台运行中，完成后自动推送结果 📨"
+            f"任務: {task[:80]}\n\n"
+            f"⏳ 後台運行中，完成後自動推送結果 📨"
         )
 
     def list_tasks_info(self) -> str:
         if not self.running_tasks:
-            return "📋 暂无子代理任务记录"
-        lines = [f"📋 **子代理任务** ({len(self.running_tasks)} 条)\n"]
+            return "📋 目前沒有子代理任務記錄"
+        lines = [f"📋 **子代理任務** （{len(self.running_tasks)} 筆）\n"]
         for t in sorted(self.running_tasks.values(), key=lambda x: x["id"], reverse=True)[:10]:
             emoji = {"running": "⏳", "done": "✅", "error": "❌"}.get(t["status"], "❓")
-            lines.append(f"{emoji} `{t['id']}` — {t['model']}")
+            name = t.get("name", t["id"])
+            # Show name prominently; show task_id in parentheses only if name differs
+            id_suffix = f" (`{t['id']}`)" if name != t["id"] else f" `{t['id']}`"
+            lines.append(f"{emoji} **{name}**{id_suffix} — {t['model']}")
             lines.append(f"   {t['task']}")
             # Show latest progress update if available
             if t.get("progress") and t["status"] == "running":
@@ -383,15 +389,16 @@ class AgentPool:
         )
 
         # ── spawn_agent ────────────────────────────────────────────
-        def spawn_agent(task: str, model_index: int = 1) -> str:
-            return pool.spawn_sub_agent(user_id, task, model_index)
+        def spawn_agent(task: str, model_index: int = 1, name: str = "") -> str:
+            return pool.spawn_sub_agent(user_id, task, model_index, name)
 
         tools["spawn_agent"] = ({
             "name": "spawn_agent",
             "description": (
-                f"在后台启动子代理，并行处理任务，完成后自动把结果推送给用户。\n"
+                f"在後台啟動子代理，並行處理任務，完成後自動把結果推送給用戶。\n"
                 f"子代理支援呼叫 report_progress 即時推送進度。\n"
-                f"可同时启动多个（建议不超过 3 个）。子代理不会再启动子代理。\n"
+                f"可同時啟動多個（建議不超過 3 個）。子代理不會再啟動子代理。\n"
+                f"呼叫前請先詢問用戶：(1) 要替子代理取什麼名稱，(2) 要用預設模型還是指定其他模型。\n"
                 f"可用模型 (model_index):\n{model_desc}"
             ),
             "input_schema": {
@@ -399,11 +406,15 @@ class AgentPool:
                 "properties": {
                     "task": {
                         "type": "string",
-                        "description": "交给子代理的完整任务描述（越详细越好）",
+                        "description": "交給子代理的完整任務描述（越詳細越好）",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "子代理的名稱（由用戶命名，便於識別），例如「資料爬取」、「報告生成」",
                     },
                     "model_index": {
                         "type": "integer",
-                        "description": f"使用哪个模型（0–{n - 1}，默认 1 快速模型）",
+                        "description": f"使用哪個模型（0–{n - 1}，預設 1 快速模型）；詢問用戶後填入",
                     },
                 },
                 "required": ["task"],
@@ -664,12 +675,15 @@ class AgentPool:
 - **任务进度**：子代理内可呼叫 report_progress 即時推送進度給用戶
 
 ## spawn_agent 使用策略
-当需要同时处理多件事时，优先考虑 spawn_agent：
-- 同时派出多个子代理（建议 ≤ 3 个）
-- 轻量任务 → model_index=1（快速模型）
-- 复杂/专业任务 → model_index=0（主力模型）或 model_index=2
-- 子代理完成后结果自动推送，不需要等待
-- 子代理内不要再次调用 spawn_agent（防止递归）
+當需要同時處理多件事時，優先考慮 spawn_agent：
+- **呼叫前必須先詢問用戶兩件事**：
+  1. 「要替這個子代理取什麼名稱？」（例如：資料爬取、報告生成、程式偵錯）
+  2. 「要用預設模型，還是指定其他模型？」（列出可用模型供選擇）
+- 同時派出多個子代理（建議 ≤ 3 個）
+- 輕量任務 → model_index=1（快速模型）
+- 複雜/專業任務 → model_index=0（主力模型）或 model_index=2
+- 子代理完成後結果自動推送，不需要等待
+- 子代理內不要再次呼叫 spawn_agent（防止遞迴）
 - 子代理可使用 report_progress 在執行途中推送進度更新
 
 ## 定時通知使用策略
