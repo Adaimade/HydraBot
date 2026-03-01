@@ -214,7 +214,7 @@ Bot:  ✅ 排程已建立 sched_a1b2c3d4
 | `read_memory` | 從 memory.json 讀取持久記憶 |
 | `write_memory` | 寫入持久記憶 |
 | `create_tool` | 撰寫並熱載入新工具（自我擴展核心） |
-| `spawn_agent` | 派出後台子代理並行執行任務 |
+| `spawn_agent` | 派出後台子代理並行執行任務；支援自訂名稱與指定模型 |
 | `schedule_notification` | 建立定時通知排程 |
 | `list_notifications` | 列出當前會話的所有排程 |
 | `cancel_notification` | 取消指定排程 |
