@@ -143,10 +143,13 @@ Copy `config.example.json` and modify:
 | `/reset` | Clear conversation history for current session |
 | `/tools` | List all available tools (including dynamic tools) |
 | `/models` | View available models; `/models N` to switch to model N |
-| `/tasks` | View background sub-agent tasks and live progress |
+| `/tasks` | View background task progress |
 | `/notify` | List scheduled notifications; `/notify cancel <id>` to cancel |
 | `/timezone` | View current timezone; `/timezone UTC+8` to set |
 | `/status` | Show system status (version, timezone, models, tool count, schedule count, etc.) |
+| `/new_agent` | Start the wizard to create a new sub-agent Bot |
+| `/list_agents` | List all registered sub-agent Bots and their status |
+| `/delete_agent [name]` | Delete a sub-agent Bot (offers graveyard archival) |
 
 ---
 
@@ -200,6 +203,42 @@ Bot:  ✅ Schedule created: sched_a1b2c3d4
 
 ---
 
+## Sub-Agent Bots
+
+HydraBot supports two types of agents:
+
+| Type | How | Purpose |
+|------|-----|---------|
+| **Background task** (`spawn_agent` tool) | LLM spawns a thread | Parallel execution of a single task; shares the parent bot's Telegram identity |
+| **Sub-agent Bot** (`/new_agent` command) | Creates a new process with its own Bot Token | Fully independent HydraBot instance with isolated workspace, memory, tools, and Telegram identity |
+
+### Creating a Sub-Agent Bot
+
+```
+/new_agent
+  → Bot asks: project folder name (e.g. data-analyzer)
+  → Bot asks: Telegram Bot Token (get one from @BotFather)
+  → Bot creates agents/{name}/ with its own config, starts the process
+  → Add the new Bot to your group — it operates independently
+```
+
+Each sub-agent gets a dedicated `agents/{name}/` folder with its own:
+- `config.json` — token, model settings
+- `memory.json` — persistent memory
+- `timezones.json`, `schedules.json` — isolated scheduling
+- `tools/` — custom tools
+
+Because each instance runs from its own directory, there is **no git or file conflict** between agents.
+
+### Deleting a Sub-Agent Bot
+
+```
+/delete_agent [name]
+  → Confirms deletion
+  → Offers to visit the Digital Graveyard to leave a memorial
+  → Permanently removes the process and agents/{name}/ folder
+```
+
 ## Built-in Tools
 
 | Tool | Description |
@@ -214,7 +253,7 @@ Bot:  ✅ Schedule created: sched_a1b2c3d4
 | `read_memory` | Read persistent memory from memory.json |
 | `write_memory` | Write to persistent memory |
 | `create_tool` | Write and hot-reload a new tool (core of self-expansion) |
-| `spawn_agent` | Spawn a named background sub-agent with selectable model to execute tasks in parallel |
+| `spawn_agent` | Spawn a named background task with selectable model (parallel execution) |
 | `schedule_notification` | Create a scheduled notification |
 | `list_notifications` | List all schedules for the current session |
 | `cancel_notification` | Cancel a specific schedule |

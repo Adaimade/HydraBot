@@ -143,10 +143,13 @@ hydrabot help           # 顯示完整幫助
 | `/reset` | 清除當前會話的對話歷史 |
 | `/tools` | 列出所有可用工具（含動態工具） |
 | `/models` | 查看可用模型；`/models N` 切換到模型 N |
-| `/tasks` | 查看後台子代理任務與即時進度 |
+| `/tasks` | 查看背景任務進度 |
 | `/notify` | 列出當前會話的定時排程；`/notify cancel <id>` 取消 |
 | `/timezone` | 查看當前時區設定；`/timezone UTC+8` 設定時區 |
 | `/status` | 顯示系統狀態（版本、時區、模型、工具數、排程數等） |
+| `/new_agent` | 啟動精靈，建立新的子代理 Bot |
+| `/list_agents` | 查看所有子代理 Bot 及其狀態 |
+| `/delete_agent [名稱]` | 刪除子代理 Bot（可選擇前往數位墓園留下記念） |
 
 ---
 
@@ -200,6 +203,42 @@ Bot:  ✅ 排程已建立 sched_a1b2c3d4
 
 ---
 
+## 兩種代理模式
+
+HydraBot 支援兩種代理形式：
+
+| 類型 | 觸發方式 | 用途 |
+|------|----------|------|
+| **背景任務**（`spawn_agent` 工具） | LLM 自行呼叫，以執行緒執行 | 並行執行單一任務，共用同一個 Bot 身份 |
+| **子代理 Bot**（`/new_agent` 指令） | 使用者手動建立，獨立程序 | 完全獨立的 HydraBot 實例，擁有自己的 Token、工作區、記憶與工具 |
+
+### 建立子代理 Bot
+
+```
+/new_agent
+  → Bot 詢問：專案資料夾名稱（例如 data-analyzer）
+  → Bot 詢問：Telegram Bot Token（從 @BotFather 取得）
+  → Bot 建立 agents/{名稱}/，啟動獨立程序
+  → 將新 Bot 加入群組，即可獨立運作
+```
+
+每個子代理擁有專屬的 `agents/{名稱}/` 資料夾，內含：
+- `config.json` — Token、模型設定
+- `memory.json` — 獨立的持久記憶
+- `timezones.json`、`schedules.json` — 獨立排程
+- `tools/` — 獨立動態工具
+
+因為各實例在各自目錄下執行，**不存在 Git 或檔案衝突問題**。
+
+### 刪除子代理 Bot
+
+```
+/delete_agent [名稱]
+  → 確認刪除
+  → 詢問是否前往數位墓園留下記念
+  → 永久移除程序與 agents/{名稱}/ 資料夾
+```
+
 ## 內建工具一覽
 
 | 工具 | 說明 |
@@ -214,7 +253,7 @@ Bot:  ✅ 排程已建立 sched_a1b2c3d4
 | `read_memory` | 從 memory.json 讀取持久記憶 |
 | `write_memory` | 寫入持久記憶 |
 | `create_tool` | 撰寫並熱載入新工具（自我擴展核心） |
-| `spawn_agent` | 派出後台子代理並行執行任務；支援自訂名稱與指定模型 |
+| `spawn_agent` | 派出命名背景任務並行執行；支援指定模型 |
 | `schedule_notification` | 建立定時通知排程 |
 | `list_notifications` | 列出當前會話的所有排程 |
 | `cancel_notification` | 取消指定排程 |
