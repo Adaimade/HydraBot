@@ -103,7 +103,8 @@ def get_builtin_tools(agent: "Agent") -> list:
         try:
             p = Path(path)
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.open(mode, encoding="utf-8").write(content)
+            with p.open(mode, encoding="utf-8") as f:
+                f.write(content)
             return f"✅ 已写入 {path}（{p.stat().st_size:,} bytes）"
         except Exception as e:
             return f"❌ {e}"
@@ -268,13 +269,24 @@ def get_builtin_tools(agent: "Agent") -> list:
         """Start an MCP server process and register its tools."""
         try:
             import shlex
-            args = shlex.split(command)
+            if sys.platform == "win32":
+                # shlex.split posix=True treats backslash as escape char,
+                # breaking Windows paths like "mcp_servers\server.py".
+                # Normalize to forward slashes first (Python accepts / on Windows),
+                # then parse with posix=False to avoid further escape processing.
+                normalized = command.replace("\\", "/")
+                args = shlex.split(normalized, posix=False)
+                # posix=False leaves surrounding quotes in tokens; strip them
+                args = [a.strip('"').strip("'") for a in args]
+            else:
+                args = shlex.split(command)
             proc = subprocess.Popen(
                 args,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                encoding="utf-8",
                 bufsize=1,
             )
         except FileNotFoundError:
@@ -380,6 +392,33 @@ def get_builtin_tools(agent: "Agent") -> list:
             return f"❓ 未找到: `{key}`"
 
         return f"❌ 未知操作: {action}（支持: set / get / list / delete）"
+
+    # ─────────────────────────────────────────────────────────────
+    # edit_soul
+    # ─────────────────────────────────────────────────────────────
+
+    def edit_soul(content: str = None, action: str = "get") -> str:
+        """Read or write the bot's persona file (SOUL.md)."""
+        soul_file = Path("SOUL.md")
+
+        if action == "get":
+            if not soul_file.exists():
+                return "📝 SOUL.md 尚未建立（目前沒有人設）\n使用 action='set' 並提供 content 來設定人設。"
+            text = soul_file.read_text(encoding="utf-8").strip()
+            return f"📝 **當前人設 (SOUL.md)**\n\n{text}" if text else "📝 SOUL.md 存在但內容為空"
+
+        elif action == "set":
+            if not content:
+                return "❌ 需要提供 content 參數"
+            soul_file.write_text(content.strip(), encoding="utf-8")
+            return "✅ 人設已更新（SOUL.md），下次對話即時生效，無需重啟"
+
+        elif action == "clear":
+            if soul_file.exists():
+                soul_file.unlink()
+            return "✅ 人設已清除（SOUL.md 已刪除）"
+
+        return f"❌ 未知操作: {action}（支持: get / set / clear）"
 
     # ─────────────────────────────────────────────────────────────
     # Schemas
@@ -571,4 +610,25 @@ def get_builtin_tools(agent: "Agent") -> list:
                 "required": ["key", "action"],
             },
         }, remember),
+
+        ("edit_soul", {
+            "name": "edit_soul",
+            "description": (
+                "讀取或更新 Bot 的人設檔案（SOUL.md）。\n"
+                "SOUL.md 的內容會自動注入到每次對話的 system prompt 最前面，\n"
+                "讓 Bot 以指定的個性、風格、語氣與用戶互動。\n"
+                "修改後立即生效，無需重啟。\n"
+                "action='get'   → 顯示目前人設內容\n"
+                "action='set'   → 設定新的人設（覆蓋整個檔案）\n"
+                "action='clear' → 清除人設，恢復預設行為"
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "action":  {"type": "string", "description": "操作: get / set / clear", "enum": ["get", "set", "clear"]},
+                    "content": {"type": "string", "description": "人設內容（Markdown 格式，action=set 時必填）"},
+                },
+                "required": ["action"],
+            },
+        }, edit_soul),
     ]

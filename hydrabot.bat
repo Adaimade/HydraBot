@@ -8,8 +8,14 @@ setlocal enabledelayedexpansion
 set "SCRIPT_DIR=%~dp0"
 cd /d "%SCRIPT_DIR%"
 
-REM ── Find Python ───────────────────────────────────────────────
+REM ── Find Python (prefer venv) ─────────────────────────────────
 set "PYTHON="
+REM Use venv Python directly if available (avoids missing-package issues)
+if exist "%SCRIPT_DIR%venv\Scripts\python.exe" (
+    set "PYTHON=%SCRIPT_DIR%venv\Scripts\python.exe"
+    goto :found_python
+)
+REM Fall back to system Python
 for %%A in (python python3) do (
     where %%A >nul 2>&1
     if !errorlevel! equ 0 (
@@ -19,12 +25,6 @@ for %%A in (python python3) do (
 )
 
 :found_python
-if defined PYTHON (
-    REM Try to activate venv
-    if exist "venv\Scripts\activate.bat" (
-        call venv\Scripts\activate.bat
-    )
-)
 
 REM ── Read version ──────────────────────────────────────────────
 set "VER=?"
