@@ -318,18 +318,30 @@ inf "  1. Telegram 搜尋 ${BOLD}@BotFather${NC}${C}，發送 /newbot，取得 B
 inf "  2. Telegram 搜尋 ${BOLD}@userinfobot${NC}${C}，取得你的數字使用者 ID"
 echo ""
 
-TG_TOKEN=""
-while [[ -z "$TG_TOKEN" ]]; do
-    ask "Bot Token: "
-    read -r TG_TOKEN
-    TG_TOKEN="${TG_TOKEN// /}"
-    [[ -z "$TG_TOKEN" ]] && printf "  ${R}不能為空${NC}\n"
-done
-ok "Token 已輸入"
+# 先嘗試從環境變數讀取（用於 Zeabur / CI/CD / 容器部署）
+TG_TOKEN="${HB_TG_TOKEN:-}"
+
+if [[ -z "$TG_TOKEN" ]]; then
+    # 交互式輸入
+    while [[ -z "$TG_TOKEN" ]]; do
+        ask "Bot Token: "
+        read -r TG_TOKEN
+        TG_TOKEN="${TG_TOKEN// /}"
+        [[ -z "$TG_TOKEN" ]] && printf "  ${R}不能為空${NC}\n"
+    done
+    ok "Token 已輸入"
+else
+    ok "Token 已從環境變數讀取"
+fi
 
 echo ""
-ask "授權使用者 ID（多個用逗號分隔，${Y}留空 = 允許所有人${NC}）: "
-read -r AUTH_USERS_RAW
+# 先嘗試從環境變數讀取
+AUTH_USERS_RAW="${HB_AUTH_USERS:-}"
+
+if [[ -z "$AUTH_USERS_RAW" ]]; then
+    ask "授權使用者 ID（多個用逗號分隔，${Y}留空 = 允許所有人${NC}）: "
+    read -r AUTH_USERS_RAW
+fi
 AUTH_USERS_RAW="${AUTH_USERS_RAW// /}"
 [[ -z "$AUTH_USERS_RAW" ]] && warn "未設定授權使用者，所有人均可使用此 Bot！"
 echo ""
@@ -349,6 +361,39 @@ configure_model() {
     local IDX="$1" LABEL="$2" REQUIRED="$3"
     printf "  ${BOLD}─── 模型 ${IDX}：${LABEL} ───${NC}\n"
 
+    # 先檢查環境變數是否有此模型的完整配置（用於容器/Zeabur）
+    local ENV_PROV="HB_M${IDX}_PROVIDER"
+    local ENV_KEY="HB_M${IDX}_KEY"
+    local ENV_MODEL="HB_M${IDX}_MODEL"
+
+    if [[ -n "${!ENV_PROV:-}" && -n "${!ENV_KEY:-}" ]]; then
+        # 從環境變數讀取
+        local PROVIDER="${!ENV_PROV}"
+        local KEY="${!ENV_KEY}"
+        local _model="${!ENV_MODEL:-}"
+        local BASE_URL="null"
+
+        # 確定預設模型名稱
+        local MODEL_DEF
+        case "$PROVIDER" in
+            openai) MODEL_DEF="gpt-4o" ;;
+            google) MODEL_DEF="gemini-2.0-flash" ;;
+            openai-compatible) MODEL_DEF="llama-3.1-8b-instant" ;;
+            *) MODEL_DEF="claude-sonnet-4-6" ;;
+        esac
+        [[ -z "$_model" ]] && _model="$MODEL_DEF"
+
+        local _name="${!HB_M${IDX}_NAME:-模型${IDX}-${LABEL}}"
+
+        MODEL_NAMES[$IDX]="$_name"  MODEL_PROVIDERS[$IDX]="$PROVIDER"
+        MODEL_KEYS[$IDX]="$KEY"     MODEL_MODELS[$IDX]="$_model"
+        MODEL_BASE_URLS[$IDX]="$BASE_URL" MODEL_DESCS[$IDX]=""
+        ok "模型 ${IDX} 已從環境變數讀取: $_name / $_model"
+        echo ""
+        return
+    fi
+
+    # 交互式配置
     if [[ "$REQUIRED" == "optional" ]]; then
         ask "  跳過此模型？[Y/n]: "
         read -r _skip
