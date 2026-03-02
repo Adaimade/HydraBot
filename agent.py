@@ -18,6 +18,9 @@ from typing import Any
 from scheduler import NotificationScheduler, parse_fire_at, REPEAT_INTERVALS
 
 
+# Maximum number of tool-call iterations per agent loop turn
+MAX_TOOL_CALLS = 30
+
 # ─────────────────────────────────────────────────────────────
 # Internal single-model client
 # ─────────────────────────────────────────────────────────────
@@ -80,7 +83,7 @@ class _ModelClient:
 
 class AgentPool:
     """
-    Manages 3 model configurations, a shared tool registry,
+    Manages multiple model configurations, a shared tool registry,
     and background sub-agent task execution.
 
     Drop-in replacement for the old Agent class.
@@ -111,6 +114,7 @@ class AgentPool:
 
         # Sub-agent task tracking  { task_id -> info_dict }
         self.running_tasks: dict[str, dict] = {}
+        self._tasks_lock = threading.Lock()  # guards running_tasks
 
         # Persistent Python namespace for execute_python
         self._py_ns: dict = {"__builtins__": __builtins__}
@@ -238,7 +242,8 @@ class AgentPool:
             if m.get("description"):
                 lines.append(f"      {m['description']}")
             lines.append("")
-        lines.append(f"切换命令: `/model 0`  `/model 1`  `/model 2`")
+        switch_examples = "  ".join(f"`/model {i}`" for i in range(len(self.model_configs)))
+        lines.append(f"切换命令: {switch_examples}")
         return "\n".join(lines)
 
     # ─────────────────────────────────────────────
@@ -257,15 +262,16 @@ class AgentPool:
         task_id = f"sub_{uuid.uuid4().hex[:6]}"
         display_name = name.strip() if name and name.strip() else task_id
 
-        self.running_tasks[task_id] = {
-            "id": task_id,
-            "name": display_name,
-            "task": task[:60] + ("…" if len(task) > 60 else ""),
-            "model": client.name,
-            "model_idx": model_index,
-            "status": "running",
-            "session_id": session_id,
-        }
+        with self._tasks_lock:
+            self.running_tasks[task_id] = {
+                "id": task_id,
+                "name": display_name,
+                "task": task[:60] + ("…" if len(task) > 60 else ""),
+                "model": client.name,
+                "model_idx": model_index,
+                "status": "running",
+                "session_id": session_id,
+            }
 
         pool = self
 
@@ -284,7 +290,8 @@ class AgentPool:
                 # Inject a session-bound report_progress tool so the LLM can
                 # push intermediate updates without waiting for task completion.
                 def report_progress(message: str) -> str:
-                    pool.running_tasks[task_id]["progress"] = message
+                    with pool._tasks_lock:
+                        pool.running_tasks[task_id]["progress"] = message
                     _push(
                         f"📊 **{display_name}** 進度更新\n"
                         f"模型: {client.name} | `{task_id}`\n\n"
@@ -325,14 +332,16 @@ class AgentPool:
                         session_id=None,
                     )
 
-                pool.running_tasks[task_id]["status"] = "done"
+                with pool._tasks_lock:
+                    pool.running_tasks[task_id]["status"] = "done"
                 msg = (
                     f"🤖 **{display_name}** 已完成\n"
                     f"模型: {client.name} | `{task_id}`\n\n"
                     f"{result}"
                 )
             except Exception as e:
-                pool.running_tasks[task_id]["status"] = "error"
+                with pool._tasks_lock:
+                    pool.running_tasks[task_id]["status"] = "error"
                 msg = (
                     f"❌ **{display_name}** 執行失敗\n"
                     f"模型: {client.name} | `{task_id}`\n"
@@ -352,10 +361,12 @@ class AgentPool:
         )
 
     def list_tasks_info(self) -> str:
-        if not self.running_tasks:
+        with self._tasks_lock:
+            tasks_snapshot = dict(self.running_tasks)
+        if not tasks_snapshot:
             return "📋 目前沒有子代理任務記錄"
-        lines = [f"📋 **子代理任務** （{len(self.running_tasks)} 筆）\n"]
-        for t in sorted(self.running_tasks.values(), key=lambda x: x["id"], reverse=True)[:10]:
+        lines = [f"📋 **子代理任務** （{len(tasks_snapshot)} 筆）\n"]
+        for t in sorted(tasks_snapshot.values(), key=lambda x: x["id"], reverse=True)[:10]:
             emoji = {"running": "⏳", "done": "✅", "error": "❌"}.get(t["status"], "❓")
             name = t.get("name", t["id"])
             # Show name prominently; show task_id in parentheses only if name differs
@@ -550,7 +561,7 @@ class AgentPool:
         system = self._system_prompt(user_id)
         schemas = self._get_schemas(tools_dict)
 
-        for _ in range(30):
+        for _ in range(MAX_TOOL_CALLS):
             resp = client.client.messages.create(
                 model=client.model,
                 max_tokens=client.max_tokens,
@@ -594,7 +605,7 @@ class AgentPool:
             },
         } for s in schemas]
 
-        for _ in range(30):
+        for _ in range(MAX_TOOL_CALLS):
             kwargs: dict = {
                 "model": client.model,
                 "messages": messages,

@@ -4,6 +4,7 @@ Telegram bot interface for HydraBot.
 """
 
 import asyncio
+import json
 import logging
 import platform
 import re
@@ -106,6 +107,19 @@ class TelegramBot:
             return True
         return user_id in self.authorized_users
 
+    def _save_whitelist(self):
+        """Persist authorized_users back to config.json (CWD-relative)."""
+        config_path = Path("config.json")
+        try:
+            data = json.loads(config_path.read_text(encoding="utf-8-sig"))
+            data["authorized_users"] = sorted(self.authorized_users)
+            config_path.write_text(
+                json.dumps(data, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except Exception as e:
+            print(f"⚠️ Failed to save whitelist to config.json: {e}")
+
     # ─────────────────────────────────────────────
     # Timezone helpers
     # ─────────────────────────────────────────────
@@ -183,10 +197,12 @@ class TelegramBot:
             "/delete_agent — 刪除子代理\n"
         ) if self.sub_agents is not None else ""
 
+        uid = update.effective_user.id
         text = (
             f"👋 你好，{name}！我是 HydraBot 🐍\n\n"
             f"运行在你的机器上，配备 **{n} 组模型** + **{len(self.pool.tools) + 4} 个工具**。\n"
             "可以执行代码、管理文件、派出背景任務——还能创建新工具来扩展自己！\n\n"
+            f"🪪 你的 Telegram ID: `{uid}`\n\n"
             "**一般指令**\n"
             "/start — 显示此消息\n"
             "/reset — 清除当前对话历史\n"
@@ -196,6 +212,7 @@ class TelegramBot:
             "/notify — 查看/管理定時通知排程\n"
             "/timezone — 查看/修改時區設定\n"
             "/soul — 查看/清除 Bot 人設\n"
+            "/whitelist — 管理授權用戶白名單\n"
             "/status — 系统状态\n\n"
             + (f"**子代理 Bot 管理**\n{agent_cmds}\n" if agent_cmds else "")
             + "⏰ **定時通知**\n"
@@ -398,6 +415,93 @@ class TelegramBot:
             f"定時排程: `{active_notifs}` 個"
         )
         await update.message.reply_text(text, parse_mode="Markdown")
+
+    async def cmd_whitelist(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        /whitelist              — show authorized users
+        /whitelist add <id>     — add user to whitelist
+        /whitelist remove <id>  — remove user from whitelist
+        """
+        if not self._ok(update.effective_user.id):
+            return
+
+        args = context.args
+
+        if not args:
+            if not self.authorized_users:
+                await update.message.reply_text(
+                    "🔓 **白名單為空** — 目前所有人均可使用此 Bot\n\n"
+                    "新增第一位授權用戶後，未授權用戶將無法使用。\n\n"
+                    "新增用戶: `/whitelist add <user_id>`\n"
+                    "💡 用戶可用 `/start` 查看自己的 ID，或透過 @userinfobot 取得。",
+                    parse_mode="Markdown",
+                )
+            else:
+                ids = "\n".join(f"• `{uid}`" for uid in sorted(self.authorized_users))
+                await update.message.reply_text(
+                    f"👥 **授權用戶白名單** ({len(self.authorized_users)} 人)\n\n"
+                    f"{ids}\n\n"
+                    f"新增: `/whitelist add <user_id>`\n"
+                    f"移除: `/whitelist remove <user_id>`",
+                    parse_mode="Markdown",
+                )
+            return
+
+        sub = args[0].lower()
+
+        if sub in ("add", "remove") and len(args) >= 2:
+            try:
+                uid = int(args[1])
+            except ValueError:
+                await update.message.reply_text(
+                    "❌ 用戶 ID 必須是數字，例如 `/whitelist add 123456789`",
+                    parse_mode="Markdown",
+                )
+                return
+
+            if sub == "add":
+                if uid in self.authorized_users:
+                    await update.message.reply_text(
+                        f"⚠️ 用戶 `{uid}` 已在白名單中", parse_mode="Markdown"
+                    )
+                    return
+                self.authorized_users.add(uid)
+                self._save_whitelist()
+                await update.message.reply_text(
+                    f"✅ 已新增用戶 `{uid}` 到白名單\n"
+                    f"白名單現有 {len(self.authorized_users)} 人",
+                    parse_mode="Markdown",
+                )
+            else:  # remove
+                if uid not in self.authorized_users:
+                    await update.message.reply_text(
+                        f"❌ 用戶 `{uid}` 不在白名單中", parse_mode="Markdown"
+                    )
+                    return
+                self.authorized_users.discard(uid)
+                self._save_whitelist()
+                if self.authorized_users:
+                    await update.message.reply_text(
+                        f"✅ 已從白名單移除用戶 `{uid}`\n"
+                        f"白名單現有 {len(self.authorized_users)} 人",
+                        parse_mode="Markdown",
+                    )
+                else:
+                    await update.message.reply_text(
+                        f"✅ 已從白名單移除用戶 `{uid}`\n\n"
+                        f"⚠️ 白名單現在為空，**所有人均可使用此 Bot**。",
+                        parse_mode="Markdown",
+                    )
+        else:
+            await update.message.reply_text(
+                "**白名單管理指令**\n\n"
+                "`/whitelist`              — 查看當前白名單\n"
+                "`/whitelist add <id>`     — 新增授權用戶\n"
+                "`/whitelist remove <id>`  — 移除授權用戶\n\n"
+                "💡 用戶可傳送 `/start` 查看自己的 Telegram ID，"
+                "或使用 @userinfobot 取得 ID。",
+                parse_mode="Markdown",
+            )
 
     # ─────────────────────────────────────────────
     # Sub-agent bot management commands
@@ -817,6 +921,7 @@ class TelegramBot:
             BotCommand("timezone",     "查看/設定時區 (UTC+N)"),
             BotCommand("status",       "系统状态与会话信息"),
             BotCommand("soul",         "查看/清除 Bot 人設（SOUL.md）"),
+            BotCommand("whitelist",    "管理授權用戶白名單"),
         ]
         if self.sub_agents is not None:
             commands += [
@@ -845,6 +950,7 @@ class TelegramBot:
         app.add_handler(CommandHandler("timezone",     self.cmd_timezone))
         app.add_handler(CommandHandler("status",       self.cmd_status))
         app.add_handler(CommandHandler("soul",         self.cmd_soul))
+        app.add_handler(CommandHandler("whitelist",    self.cmd_whitelist))
         if self.sub_agents is not None:
             app.add_handler(CommandHandler("new_agent",    self.cmd_new_agent))
             app.add_handler(CommandHandler("list_agents",  self.cmd_list_agents))

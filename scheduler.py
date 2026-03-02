@@ -294,7 +294,10 @@ class NotificationScheduler:
                     if job.active and job.fire_at <= now:
                         to_fire.append(job)
             for job in to_fire:
-                self._fire_job(job)
+                # Re-check active flag: the job may have been cancelled
+                # between the collection above and now.
+                if job.active:
+                    self._fire_job(job)
 
     def _fire_job(self, job: ScheduledJob):
         """觸發一個通知並決定是否重新排程。"""

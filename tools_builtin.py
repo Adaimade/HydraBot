@@ -154,10 +154,20 @@ def get_builtin_tools(agent: "Agent") -> list:
     # create_tool  ← self-expansion core
     # ─────────────────────────────────────────────────────────────
 
+    # Names injected per-session (not in agent.tools) that must not be overwritten
+    _SESSION_TOOL_NAMES = {
+        "spawn_agent", "schedule_notification",
+        "list_notifications", "cancel_notification", "report_progress",
+    }
+
     def create_tool(tool_name: str, tool_code: str) -> str:
         """Write a tool module to tools/ and hot-reload."""
         if not tool_name.replace("_", "").isalnum():
             return "❌ 工具名只能包含字母、数字、下划线"
+
+        # Prevent overwriting built-in or session-bound tools
+        if tool_name in agent.tools or tool_name in _SESSION_TOOL_NAMES:
+            return f"❌ 工具名 `{tool_name}` 與內建工具衝突，請換一個名稱"
 
         tools_dir = Path("tools")
         tools_dir.mkdir(exist_ok=True)

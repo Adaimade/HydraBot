@@ -172,12 +172,17 @@ class SubAgentManager:
             return f"找不到 main.py: {main_py}"
 
         try:
-            proc = subprocess.Popen(
-                [sys.executable, str(main_py)],
-                cwd=str(agent_dir),
-                stdout=open(agent_dir / "bot.log", "a"),
-                stderr=subprocess.STDOUT,
-            )
+            log_fh = open(agent_dir / "bot.log", "a")
+            try:
+                proc = subprocess.Popen(
+                    [sys.executable, str(main_py)],
+                    cwd=str(agent_dir),
+                    stdout=log_fh,
+                    stderr=subprocess.STDOUT,
+                )
+            finally:
+                # The subprocess has inherited the fd; close the Python wrapper.
+                log_fh.close()
             self._procs[name] = proc
             return None
         except Exception as e:

@@ -113,7 +113,7 @@ function Find-Python {
         try {
             $v = & $cmd --version 2>&1
             if ($v -match "Python 3\.(\d+)") {
-                if ([int]$Matches[1] -ge 9) { return $cmd }
+                if ([int]$Matches[1] -ge 10) { return $cmd }
             }
         } catch {}
     }
@@ -122,7 +122,7 @@ function Find-Python {
 
 $PYTHON = Find-Python
 if (-not $PYTHON) {
-    Warn "未找到 Python 3.9+，尝试用 winget 自动安装..."
+    Warn "未找到 Python 3.10+，尝试用 winget 自动安装..."
     try {
         winget install -e --id Python.Python.3.12 --silent --accept-source-agreements --accept-package-agreements
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")

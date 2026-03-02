@@ -31,7 +31,7 @@ cat << 'BANNER'
         |___/
 BANNER
 printf "${NC}"
-REMOTE_VER=$(curl -fsSL "$REPO/VERSION" 2>/dev/null | tr -d '[:space:]') || REMOTE_VER="1.1.0"
+REMOTE_VER=$(curl -fsSL --max-time 10 "$REPO/VERSION" 2>/dev/null | tr -d '[:space:]') || REMOTE_VER="1.1.0"
 printf "${BOLD}  Self-expanding AI Assistant via Telegram  ${G}v${REMOTE_VER}${NC}\n"
 printf "${DIM}  https://github.com/Adaimade/HydraBot${NC}\n\n"
 
@@ -87,7 +87,7 @@ python_ok() {
     local major minor
     major=$("$cmd" -c "import sys; print(sys.version_info.major)" 2>/dev/null) || return 1
     minor=$("$cmd" -c "import sys; print(sys.version_info.minor)" 2>/dev/null) || return 1
-    [[ "$major" -ge 3 && "$minor" -ge 9 ]]
+    [[ "$major" -ge 3 && "$minor" -ge 10 ]]
 }
 
 # ── Install curl if missing ────────────────────────────────────
@@ -110,7 +110,7 @@ command -v curl &>/dev/null && ok "curl  $(curl --version | head -1 | awk '{prin
 # ── Install Python ────────────────────────────────────────────
 PYTHON=""
 # Check existing python
-for cmd in python3 python3.12 python3.11 python3.10 python3.9 python; do
+for cmd in python3 python3.13 python3.12 python3.11 python3.10 python; do
     if python_ok "$cmd"; then
         PYTHON="$cmd"
         break
@@ -118,7 +118,7 @@ for cmd in python3 python3.12 python3.11 python3.10 python3.9 python; do
 done
 
 if [[ -z "$PYTHON" ]]; then
-    warn "未找到 Python 3.9+，尝试自动安装..."
+    warn "未找到 Python 3.10+，尝试自动安装..."
     echo ""
 
     case "$OS" in
@@ -200,13 +200,13 @@ if [[ -z "$PYTHON" ]]; then
             ;;
 
         *)
-            printf "\n  ${R}不支持的系统，请手动安装 Python 3.9+：${NC}\n"
+            printf "\n  ${R}不支持的系统，请手动安装 Python 3.10+：${NC}\n"
             printf "  ${C}https://www.python.org/downloads/${NC}\n\n"
             exit 1
             ;;
     esac
 
-    [[ -z "$PYTHON" ]] && err "Python 安装失败，请手动安装 Python 3.9+ 后重试"
+    [[ -z "$PYTHON" ]] && err "Python 安装失败，请手动安装 Python 3.10+ 后重试"
 fi
 
 ok "Python  $($PYTHON --version)  ($PYTHON)"
@@ -280,7 +280,7 @@ CORE_FILES=(agent.py bot.py main.py tools_builtin.py scheduler.py sub_agent_mana
 FAILED_DL=()
 for f in "${CORE_FILES[@]}"; do
     printf "  %-28s " "$f"
-    if curl -fsSL "$REPO/$f" -o "$INSTALL_DIR/$f" 2>/dev/null; then
+    if curl -fsSL --max-time 30 "$REPO/$f" -o "$INSTALL_DIR/$f" 2>/dev/null; then
         printf "${G}✓${NC}\n"
     else
         printf "${Y}⚠ (跳过)${NC}\n"
