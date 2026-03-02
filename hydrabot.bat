@@ -135,22 +135,25 @@ if exist "config.json" (
     echo   配置文件:   ✓ 存在
 
     if defined PYTHON (
-        %PYTHON% - <<PYEOF
-import json, sys, os
-try:
-    c = json.loads(open('config.json').read())
-    models = c.get('models', [])
-    auth = c.get('authorized_users', [])
-    print(f'  模型组数:   {len(models)} 组')
-    for i, m in enumerate(models):
-        print(f'    [{i}] {m.get("name","?")}  ({m.get("provider","?")} / {m.get("model","?")})')
-    print(f'  授权用户:   {auth if auth else "（不限制）"}')
-    tg = c.get('telegram_token', '')
-    masked = tg[:6]+'...'+tg[-4:] if len(tg)>10 else '???'
-    print(f'  TG Token:   {masked}')
-except Exception as e:
-    print(f'  ⚠ 读取失败: {e}')
-PYEOF
+        set "_py=%TEMP%\_hb_status.py"
+        (
+            echo import json
+            echo try:
+            echo     c = json.load(open("config.json"))
+            echo     m = c.get("models", [])
+            echo     a = c.get("authorized_users", [])
+            echo     print("  Models: " + str(len(m)) + " set")
+            echo     for i, x in enumerate(m):
+            echo         print("    [" + str(i) + "] " + x.get("name","?") + "  (" + x.get("provider","?") + " / " + x.get("model","?") + ")")
+            echo     print("  Auth:   " + str(a if a else "(unlimited)"))
+            echo     t = c.get("telegram_token", "")
+            echo     mk = t[:6]+"..."+t[-4:] if len(t)>10 else "???"
+            echo     print("  Token:  " + mk)
+            echo except Exception as e:
+            echo     print("  Warning: " + str(e))
+        ) > "!_py!"
+        %PYTHON% "!_py!"
+        del "!_py!" >nul 2>&1
     )
 ) else (
     echo   配置文件:   ✗ 不存在 (运行 bash install.sh)
