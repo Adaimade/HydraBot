@@ -224,7 +224,10 @@ ok "Python  $($PYTHON --version)  ($PYTHON)"
 if ! "$PYTHON" -m pip --version &>/dev/null; then
     warn "pip 未找到，嘗試安裝..."
     case "$OS" in
-        debian) run_cmd apt-get install -y python3-pip -qq ;;
+        debian)
+            run_cmd apt-get update -qq
+            run_cmd apt-get install -y python3-pip -qq
+            ;;
         fedora|redhat) run_cmd dnf install -y python3-pip -q 2>/dev/null \
                      || run_cmd yum install -y python3-pip -q ;;
         alpine) run_cmd apk add --quiet py3-pip ;;
@@ -240,6 +243,7 @@ if ! "$PYTHON" -m venv --help &>/dev/null; then
     case "$OS" in
         debian)
             # debian/ubuntu 需要單獨安裝 python3-venv
+            run_cmd apt-get update -qq
             PYVER=$("$PYTHON" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
             run_cmd apt-get install -y "python${PYVER}-venv" python3-venv -qq 2>/dev/null \
             || run_cmd apt-get install -y python3-full -qq
