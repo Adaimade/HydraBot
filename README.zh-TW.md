@@ -4,7 +4,7 @@
 > 運行在你本地機器上的 AI 助手，透過 Telegram 與之對話，能執行程式碼、管理檔案、並行派出子代理，甚至在執行時自行建立新工具來擴展自身能力——就像九頭蛇一樣，砍掉一頭會再長出更多。
 
 [![Version](https://img.shields.io/badge/version-1.2.0-blue)](VERSION)
-[![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 [English](README.md)
@@ -15,7 +15,7 @@
 
 | 功能 | 說明 |
 |------|------|
-| 🤖 **多模型並存** | 同時配置最多 3 組 AI 模型，主力 + 快速 + 備用，對話中可即時切換 |
+| 🤖 **多模型並存** | 同時配置多組 AI 模型，主力 + 快速 + 備用，對話中可即時切換 |
 | ⚡ **並行子代理** | `spawn_agent` — 把子任務派給其他模型，後台並行執行，互不阻塞 |
 | 🔧 **自我擴展** | `create_tool` — LLM 可在運行時自行撰寫並熱載入新工具 |
 | 💻 **本地執行** | Python / Shell 程式碼直接跑在你的機器上，可讀寫本地檔案 |
@@ -37,7 +37,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Adaimade/HydraBot/main/insta
 ```
 
 安裝器會自動完成：
-1. 檢測並安裝 Python 3.9+
+1. 檢測並安裝 Python 3.10+
 2. 克隆/下載核心檔案
 3. 建立 Python 虛擬環境並安裝依賴
 4. 互動式填寫 Telegram Token、AI API Key
@@ -159,6 +159,7 @@ hydrabot help           # 顯示完整幫助
 | `/tasks` | 查看背景任務進度 |
 | `/notify` | 列出當前會話的定時排程；`/notify cancel <id>` 取消 |
 | `/timezone` | 查看當前時區設定；`/timezone UTC+8` 設定時區 |
+| `/whitelist` | 管理授權用戶白名單；`/whitelist add <id>` 新增，`/whitelist remove <id>` 移除 |
 | `/status` | 顯示系統狀態（版本、時區、模型、工具數、排程數等） |
 | `/new_agent` | 啟動精靈，建立新的子代理 Bot |
 | `/list_agents` | 查看所有子代理 Bot 及其狀態 |
@@ -363,6 +364,29 @@ def get_tools():
 
 ---
 
+## Bot 人設（SOUL.md）
+
+你可以替 Bot 設定個性、口吻與行為風格，儲存在 `SOUL.md` 檔案中。內容會自動注入到每次對話的 system prompt 最前面，**修改後立即生效，無需重啟**。
+
+**使用方式（對話中直接下指令）：**
+
+```
+查看目前人設：  告訴 Bot「顯示目前的人設」
+設定新人設：    告訴 Bot「把人設設定為：...（描述你想要的個性）」
+清除人設：      告訴 Bot「清除人設，恢復預設行為」
+```
+
+Bot 會呼叫 `edit_soul` 工具完成操作。
+
+**SOUL.md 範例：**
+
+```markdown
+你是一個幽默風趣的助理，說話簡潔有力，擅長用比喻解釋複雜概念。
+你習慣在回覆結尾加上一個貼近主題的小笑話。
+```
+
+---
+
 ## 多專案隔離
 
 每個 **Telegram 群組** 或 **Topic（話題）** 擁有完全獨立的：
@@ -388,7 +412,7 @@ hydrabot update
 
 ## 系統需求
 
-- Python 3.9+
+- Python 3.10+
 - Telegram Bot Token（[@BotFather](https://t.me/BotFather)）
 - 至少一個 AI Provider 的 API Key
 - 網路連接

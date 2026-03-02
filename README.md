@@ -4,7 +4,7 @@
 > An AI assistant running on your local machine. Chat with it through Telegram to execute code, manage files, spawn parallel sub-agents, and even create new tools at runtime to expand its own capabilities — just like a hydra: cut off one head and more grow back.
 
 [![Version](https://img.shields.io/badge/version-1.2.0-blue)](VERSION)
-[![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 [中文文件](README.zh-TW.md)
@@ -15,7 +15,7 @@
 
 | Feature | Description |
 |---------|-------------|
-| 🤖 **Multi-Model Support** | Configure up to 3 AI models simultaneously (primary + fast + backup), switchable mid-conversation |
+| 🤖 **Multi-Model Support** | Configure multiple AI models simultaneously (primary + fast + backup), switchable mid-conversation |
 | ⚡ **Parallel Sub-Agents** | `spawn_agent` — delegate subtasks to other models, running in parallel without blocking |
 | 🔧 **Self-Expansion** | `create_tool` — the LLM can write and hot-reload new tools at runtime |
 | 💻 **Local Execution** | Python / Shell code runs directly on your machine with full filesystem access |
@@ -37,7 +37,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Adaimade/HydraBot/main/insta
 ```
 
 The installer will automatically:
-1. Detect and install Python 3.9+
+1. Detect and install Python 3.10+
 2. Clone / download core files
 3. Create a Python virtual environment and install dependencies
 4. Interactively prompt for your Telegram Token and AI API Key
@@ -159,6 +159,7 @@ Copy `config.example.json` and modify:
 | `/tasks` | View background task progress |
 | `/notify` | List scheduled notifications; `/notify cancel <id>` to cancel |
 | `/timezone` | View current timezone; `/timezone UTC+8` to set |
+| `/whitelist` | Manage the authorized users list; `/whitelist add <id>` to add, `/whitelist remove <id>` to remove |
 | `/status` | Show system status (version, timezone, models, tool count, schedule count, etc.) |
 | `/new_agent` | Start the wizard to create a new sub-agent Bot |
 | `/list_agents` | List all registered sub-agent Bots and their status |
@@ -363,6 +364,29 @@ def get_tools():
 
 ---
 
+## Bot Persona (SOUL.md)
+
+You can give the bot a custom personality, tone, and behavior style by creating a `SOUL.md` file. Its content is automatically injected at the top of every conversation's system prompt — **changes take effect immediately without restarting**.
+
+**Usage (just tell the bot in conversation):**
+
+```
+View current persona:   Ask the bot "show me the current persona"
+Set a new persona:      Ask the bot "set the persona to: ...(describe the style you want)"
+Clear the persona:      Ask the bot "clear the persona and restore default behavior"
+```
+
+The bot will call the `edit_soul` tool to handle these operations.
+
+**Example SOUL.md:**
+
+```markdown
+You are a witty and humorous assistant. You speak concisely and love using metaphors
+to explain complex concepts. You end every reply with a short, on-topic joke.
+```
+
+---
+
 ## Multi-Project Isolation
 
 Each **Telegram group** or **Topic** has completely independent:
@@ -388,7 +412,7 @@ Downloads the latest core files without affecting user data (`config.json`, `too
 
 ## System Requirements
 
-- Python 3.9+
+- Python 3.10+
 - Telegram Bot Token ([@BotFather](https://t.me/BotFather))
 - API Key from at least one AI Provider
 - Internet connection
