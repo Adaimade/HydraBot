@@ -52,13 +52,26 @@ irm https://raw.githubusercontent.com/Adaimade/HydraBot/main/install.ps1 | iex
 ### 手動安裝
 
 ```bash
+# Linux / macOS
 git clone https://github.com/Adaimade/HydraBot.git
 cd HydraBot
-python -m venv venv && source venv/bin/activate
+python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 cp config.example.json config.json
 # 編輯 config.json 填入憑證
-python main.py
+./hydrabot start
+```
+
+```powershell
+# Windows (PowerShell)
+git clone https://github.com/Adaimade/HydraBot.git
+cd HydraBot
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+copy config.example.json config.json
+# 編輯 config.json 填入憑證
+hydrabot.bat start
 ```
 
 ---
