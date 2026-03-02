@@ -24,8 +24,8 @@ def load_config() -> dict:
             "max_history": 50,
         }
         config_path.write_text(json.dumps(template, indent=2, ensure_ascii=False))
-        print("✅ Created config.json")
-        print("   Please fill in your credentials and run again.")
+        print("✅ 已建立 config.json")
+        print("   請填寫您的憑證後重新執行。")
         sys.exit(0)
 
     # utf-8-sig handles both UTF-8 with BOM (written by Windows PowerShell)
@@ -36,14 +36,14 @@ def load_config() -> dict:
 
     # Check Telegram token
     if config.get("telegram_token") in ("", "YOUR_TELEGRAM_BOT_TOKEN", None):
-        errors.append("telegram_token 未设置")
+        errors.append("telegram_token 未設定")
 
     # Check model config — support both new (models array) and old (model_api_key) format
     models = config.get("models", [])
     if models:
         # New format: check all models have an api_key
         bad = [
-            f"模型 #{i} ({m.get('name','?')}) 缺少 api_key"
+            f"模型 #{i}（{m.get('name', '?')}）缺少 api_key"
             for i, m in enumerate(models)
             if m.get("api_key") in ("", "YOUR_MODEL_API_KEY", "YOUR_GOOGLE_AI_KEY", None)
             and "provider" in m  # skip comment-only entries
@@ -52,13 +52,13 @@ def load_config() -> dict:
     else:
         # Old format fallback
         if config.get("model_api_key") in ("", "YOUR_MODEL_API_KEY", None):
-            errors.append("model_api_key 未设置")
+            errors.append("model_api_key 未設定")
 
     if errors:
-        print("❌ config.json 配置错误，请先填写：")
+        print("❌ config.json 設定有誤，請先填寫：")
         for e in errors:
             print(f"   · {e}")
-        print("\n   运行 hydrabot.bat config 或直接编辑 config.json")
+        print("\n   執行 hydrabot.bat config 或直接編輯 config.json")
         sys.exit(1)
 
     return config
@@ -69,7 +69,7 @@ def main():
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-    print("🐍 HydraBot starting...")
+    print("🐍 HydraBot 啟動中...")
 
     config = load_config()
 

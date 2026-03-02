@@ -37,7 +37,7 @@ class Handler(BaseHTTPRequestHandler):
         for i, m in enumerate(models):
             key = m.get("api_key", "")
             key_ok = bool(key) and "YOUR_" not in key
-            key_disp = f"{key[:6]}...{key[-4:]}" if len(key) > 10 else "未设置"
+            key_disp = f"{key[:6]}...{key[-4:]}" if len(key) > 10 else "未設定"
             rows += f"""
             <tr>
               <td>#{i}</td>
@@ -51,7 +51,7 @@ class Handler(BaseHTTPRequestHandler):
             # legacy single-model config
             key = cfg.get("model_api_key","")
             key_ok = bool(key) and "YOUR_" not in key
-            key_disp = f"{key[:6]}...{key[-4:]}" if len(key) > 10 else "未设置"
+            key_disp = f"{key[:6]}...{key[-4:]}" if len(key) > 10 else "未設定"
             rows = f"""
             <tr>
               <td>#0</td>
@@ -95,7 +95,7 @@ class Handler(BaseHTTPRequestHandler):
 <p class="sub">Self-expanding AI Assistant via Telegram &nbsp;·&nbsp; v{ver}</p>
 
 <div class="card">
-  <h2>快速状态</h2>
+  <h2>快速狀態</h2>
   <div class="grid">
     <div class="stat">
       <div class="val {'ok' if has_token else 'bad'}">"{'✓' if has_token else '✗'}"</div>
@@ -103,30 +103,30 @@ class Handler(BaseHTTPRequestHandler):
     </div>
     <div class="stat">
       <div class="val">{len(models) or 1}</div>
-      <div class="lbl">模型组数</div>
+      <div class="lbl">模型組數</div>
     </div>
     <div class="stat">
       <div class="val">{tool_count + 13}</div>
-      <div class="lbl">工具总数</div>
+      <div class="lbl">工具總數</div>
     </div>
     <div class="stat">
       <div class="val {'ok' if venv_ok else 'warn'}">"{'✓' if venv_ok else '!'}"</div>
-      <div class="lbl">虚拟环境</div>
+      <div class="lbl">虛擬環境</div>
     </div>
   </div>
 </div>
 
 <div class="card">
-  <h2>模型配置</h2>
+  <h2>模型設定</h2>
   <table>
-    <tr><th>#</th><th>名称</th><th>Provider</th><th>Model</th><th>API Key</th></tr>
+    <tr><th>#</th><th>名稱</th><th>Provider</th><th>Model</th><th>API Key</th></tr>
     {rows}
   </table>
 </div>
 
 <div class="card">
   <h2>常用命令</h2>
-  <p style="color:#8b949e;font-size:.875rem">在终端中运行：</p>
+  <p style="color:#8b949e;font-size:.875rem">在終端機中執行：</p>
   <div class="cmd">bash &lt;(curl -fsSL https://raw.githubusercontent.com/Adaimade/HydraBot/main/install.sh)</div>
   <div class="cmd" style="margin-top:.5rem">hydrabot start &nbsp;·&nbsp; hydrabot update &nbsp;·&nbsp; hydrabot status &nbsp;·&nbsp; hydrabot logs</div>
 </div>

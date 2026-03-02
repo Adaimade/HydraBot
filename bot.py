@@ -28,10 +28,10 @@ logger = logging.getLogger(__name__)
 MAX_MSG = 4096
 
 UNAUTHORIZED_MSG = (
-    "⛔ 未授权 / Unauthorized\n\n"
-    "你没有使用此 Bot 的权限。\n"
-    "如需授权，请联系 Bot 管理员。\n\n"
-    "🐍 想自己部署一个？\n"
+    "⛔ 未授權 / Unauthorized\n\n"
+    "你沒有使用此 Bot 的權限。\n"
+    "如需授權，請聯繫 Bot 管理員。\n\n"
+    "🐍 想自己部署一個？\n"
     "https://github.com/Adaimade/HydraBot"
 )
 
@@ -70,10 +70,10 @@ class TelegramBot:
             self.sub_agents = None
 
         from agent import AgentPool
-        print("🧠 Initializing agent pool...")
+        print("🧠 初始化 Agent Pool...")
         self.pool = AgentPool(config)
-        print(f"✅ {len(self.pool.model_configs)} models configured, "
-              f"{len(self.pool.tools) + 1} tools loaded\n")
+        print(f"✅ 已設定 {len(self.pool.model_configs)} 組模型，"
+              f"已載入 {len(self.pool.tools) + 1} 個工具\n")
 
     # ─────────────────────────────────────────────
     # Session ID
@@ -200,20 +200,20 @@ class TelegramBot:
         uid = update.effective_user.id
         text = (
             f"👋 你好，{name}！我是 HydraBot 🐍\n\n"
-            f"运行在你的机器上，配备 **{n} 组模型** + **{len(self.pool.tools) + 4} 个工具**。\n"
-            "可以执行代码、管理文件、派出背景任務——还能创建新工具来扩展自己！\n\n"
+            f"運行在你的機器上，配備 **{n} 組模型** + **{len(self.pool.tools) + 4} 個工具**。\n"
+            "可以執行程式碼、管理檔案、派出背景任務——還能建立新工具來擴展自己！\n\n"
             f"🪪 你的 Telegram ID: `{uid}`\n\n"
             "**一般指令**\n"
-            "/start — 显示此消息\n"
-            "/reset — 清除当前对话历史\n"
+            "/start — 顯示此訊息\n"
+            "/reset — 清除目前對話記錄\n"
             "/tools — 列出可用工具\n"
-            "/models — 查看/切换模型\n"
+            "/models — 查看／切換模型\n"
             "/tasks — 查看背景任務與進度\n"
-            "/notify — 查看/管理定時通知排程\n"
-            "/timezone — 查看/修改時區設定\n"
-            "/soul — 查看/清除 Bot 人設\n"
+            "/notify — 查看／管理定時通知排程\n"
+            "/timezone — 查看／修改時區設定\n"
+            "/soul — 查看／清除 Bot 人設\n"
             "/whitelist — 管理授權用戶白名單\n"
-            "/status — 系统状态\n\n"
+            "/status — 系統狀態\n\n"
             + (f"**子代理 Bot 管理**\n{agent_cmds}\n" if agent_cmds else "")
             + "⏰ **定時通知**\n"
             "直接告訴我「明天早上 9 點提醒我開會」或「每天通知我查看報告」，\n"
@@ -221,7 +221,7 @@ class TelegramBot:
             "📊 **任務進度**\n"
             "背景任務執行時，可即時回報進度，\n"
             "用 /tasks 隨時查看最新狀態。\n\n"
-            "直接发消息开始对话 →"
+            "直接發訊息開始對話 →"
         )
         await update.message.reply_text(text, parse_mode="Markdown")
 
@@ -235,7 +235,7 @@ class TelegramBot:
             return
         session_id = self._session_id(update)
         self.pool.reset_conversation(session_id)
-        await update.message.reply_text("✅ 当前会话的对话历史已清除")
+        await update.message.reply_text("✅ 目前會話的對話記錄已清除")
 
     async def cmd_tools(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._ok(update.effective_user.id):
@@ -260,7 +260,7 @@ class TelegramBot:
             except ValueError:
                 n = len(self.pool.model_configs)
                 await update.message.reply_text(
-                    f"❌ 请输入数字索引，例如 `/model 1`（范围 0–{n - 1}）",
+                    f"❌ 請輸入數字索引，例如 `/model 1`（範圍 0–{n - 1}）",
                     parse_mode="Markdown",
                 )
         else:
@@ -387,11 +387,11 @@ class TelegramBot:
 
         # Session label
         if thread_id:
-            session_label = f"群组 Topic (chat={chat_id}, thread={thread_id})"
+            session_label = f"群組 Topic (chat={chat_id}, thread={thread_id})"
         elif chat_id == update.effective_user.id:
-            session_label = "私聊"
+            session_label = "私訊"
         else:
-            session_label = f"群组 (chat={chat_id})"
+            session_label = f"群組 (chat={chat_id})"
 
         active_notifs = len(self.pool.scheduler.list_jobs(session_id=session_id))
         tz_raw = self.pool.get_timezone(session_id)
@@ -399,19 +399,19 @@ class TelegramBot:
             sign   = "+" if tz_raw >= 0 else ""
             tz_str = f"UTC{sign}{tz_raw}"
         else:
-            tz_str = "未設定（/timezone 設定）"
+            tz_str = "未設定（請用 /timezone 設定）"
         text = (
-            "🖥️ **系统状态**\n\n"
+            "🖥️ **系統狀態**\n\n"
             f"Python: `{sys.version.split()[0]}`\n"
             f"平台: `{platform.system()} {platform.release()}`\n"
-            f"当前会话: `{session_label}`\n"
-            f"时区: `{tz_str}`\n"
-            f"对话轮数: `{history_len // 2}` 轮\n"
-            f"当前模型: `{m.get('name', m['model'])}` (#{idx})\n"
+            f"目前會話: `{session_label}`\n"
+            f"時區: `{tz_str}`\n"
+            f"對話輪數: `{history_len // 2}` 輪\n"
+            f"目前模型: `{m.get('name', m['model'])}` (#{idx})\n"
             f"Provider: `{m['provider']}`\n"
-            f"模型组数: `{len(self.pool.model_configs)}`\n"
-            f"工具总数: `{len(self.pool.tools) + 4}`\n"
-            f"子代理运行中: `{running}`\n"
+            f"模型組數: `{len(self.pool.model_configs)}`\n"
+            f"工具總數: `{len(self.pool.tools) + 4}`\n"
+            f"子代理執行中: `{running}`\n"
             f"定時排程: `{active_notifs}` 個"
         )
         await update.message.reply_text(text, parse_mode="Markdown")
@@ -912,15 +912,15 @@ class TelegramBot:
         asyncio.create_task(self._check_updates())
 
         commands = [
-            BotCommand("start",        "显示欢迎消息"),
-            BotCommand("reset",        "清除当前会话历史"),
+            BotCommand("start",        "顯示歡迎訊息"),
+            BotCommand("reset",        "清除目前會話記錄"),
             BotCommand("tools",        "列出可用工具"),
-            BotCommand("models",       "查看/切换模型"),
+            BotCommand("models",       "查看／切換模型"),
             BotCommand("tasks",        "查看背景任務進度"),
-            BotCommand("notify",       "查看/管理定時通知排程"),
-            BotCommand("timezone",     "查看/設定時區 (UTC+N)"),
-            BotCommand("status",       "系统状态与会话信息"),
-            BotCommand("soul",         "查看/清除 Bot 人設（SOUL.md）"),
+            BotCommand("notify",       "查看／管理定時通知排程"),
+            BotCommand("timezone",     "查看／設定時區 (UTC+N)"),
+            BotCommand("status",       "系統狀態與會話資訊"),
+            BotCommand("soul",         "查看／清除 Bot 人設（SOUL.md）"),
             BotCommand("whitelist",    "管理授權用戶白名單"),
         ]
         if self.sub_agents is not None:
@@ -967,18 +967,18 @@ class TelegramBot:
         local_tz_str = f"UTC{tz_sign}{tz_hours}"
 
         if self.authorized_users:
-            auth_info = f"{len(self.authorized_users)} 个 (IDs: {', '.join(str(u) for u in sorted(self.authorized_users))})"
+            auth_info = f"{len(self.authorized_users)} 人（IDs: {', '.join(str(u) for u in sorted(self.authorized_users))}）"
         else:
-            auth_info = "所有人（无限制）"
+            auth_info = "所有人（無限制）"
 
-        print(f"🐍 HydraBot running!")
-        print(f"   Models  : {len(self.pool.model_configs)} 组")
+        print(f"🐍 HydraBot 運行中！")
+        print(f"   模型    : {len(self.pool.model_configs)} 組")
         for i, m in enumerate(self.pool.model_configs):
             print(f"     [{i}] {m.get('name', m['model'])}  ({m['provider']} / {m['model']})")
-        print(f"   Tools   : {len(self.pool.tools) + 4} 个")
-        print(f"   Access  : {auth_info}")
-        print(f"   Timezone: {local_tz_str}（本机系统时区）")
-        print(f"   Session : chat_id + thread_id 双维度隔离")
-        print(f"   Ctrl+C to stop\n")
+        print(f"   工具    : {len(self.pool.tools) + 4} 個")
+        print(f"   存取    : {auth_info}")
+        print(f"   時區    : {local_tz_str}（本機系統時區）")
+        print(f"   會話    : chat_id + thread_id 雙維度隔離")
+        print(f"   Ctrl+C 停止\n")
 
         app.run_polling(drop_pending_updates=True)
