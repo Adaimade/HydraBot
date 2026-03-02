@@ -153,7 +153,7 @@ class AgentPool:
 
         # Backward compatibility: single model
         return [{
-            "name": "默认模型",
+            "name": "預設模型",
             "provider": cfg.get("model_provider", "anthropic"),
             "api_key": cfg.get("model_api_key", ""),
             "model": cfg.get("model_name", "claude-sonnet-4-6"),
@@ -223,27 +223,27 @@ class AgentPool:
     def switch_model(self, session_id: tuple, model_idx: int) -> str:
         n = len(self.model_configs)
         if not (0 <= model_idx < n):
-            return f"❌ 无效索引，请输入 0–{n - 1}"
+            return f"❌ 無效索引，請輸入 0–{n - 1}"
         self.user_model[session_id] = model_idx
         m = self.model_configs[model_idx]
         return (
-            f"✅ 已切换到 **模型 {model_idx}**\n"
-            f"名称: {m.get('name', m['model'])}\n"
+            f"✅ 已切換至 **模型 {model_idx}**\n"
+            f"名稱: {m.get('name', m['model'])}\n"
             f"模型: `{m['model']}` ({m['provider']})"
         )
 
     def list_models_info(self, session_id: tuple) -> str:
         current = self.user_model.get(session_id, 0)
-        lines = [f"🤖 **可用模型** ({len(self.model_configs)} 组)\n"]
+        lines = [f"🤖 **可用模型** ({len(self.model_configs)} 組)\n"]
         for i, m in enumerate(self.model_configs):
-            tag = "▶️ 当前" if i == current else f"  `{i}` "
+            tag = "▶️ 目前" if i == current else f"  `{i}` "
             lines.append(f"{tag} **{m.get('name', m['model'])}**")
             lines.append(f"      `{m['provider']}` / `{m['model']}`")
             if m.get("description"):
                 lines.append(f"      {m['description']}")
             lines.append("")
         switch_examples = "  ".join(f"`/model {i}`" for i in range(len(self.model_configs)))
-        lines.append(f"切换命令: {switch_examples}")
+        lines.append(f"切換指令: {switch_examples}")
         return "\n".join(lines)
 
     # ─────────────────────────────────────────────
@@ -586,9 +586,9 @@ class AgentPool:
                 messages.append({"role": "user", "content": results})
             else:
                 texts = [b.text for b in resp.content if hasattr(b, "text")]
-                return "\n".join(texts) or "(无响应)"
+                return "\n".join(texts) or "（無回應）"
 
-        return "❌ 超过最大工具调用次数"
+        return "❌ 超過工具呼叫次數上限"
 
     def _openai_loop(self, client: _ModelClient, history: list,
                       tools_dict: dict, user_id) -> str:
@@ -631,9 +631,9 @@ class AgentPool:
                         "content": str(result),
                     })
             else:
-                return msg.content or "(无响应)"
+                return msg.content or "（無回應）"
 
-        return "❌ 超过最大工具调用次数"
+        return "❌ 超過工具呼叫次數上限"
 
     # ─────────────────────────────────────────────
     # System prompt
@@ -669,7 +669,7 @@ class AgentPool:
             )
         else:
             cur_info = "（子代理模式）"
-            tz_info  = ""
+            tz_info = ""
 
         model_list = "\n".join(
             f"- 模型 {i}: **{m.get('name', m['model'])}** ({m['provider']}/{m['model']}) {m.get('description', '')}"
@@ -679,9 +679,9 @@ class AgentPool:
         soul = self._load_soul()
         soul_section = f"\n## 人設與個性風格（SOUL.md）\n{soul}\n" if soul else ""
 
-        return f"""你是 HydraBot，一个强大的本地 AI 助手，通过 Telegram 与用户交互，运行在用户的机器上。你像九头蛇一样能不断长出新的能力——每当用户需要新功能，你就能自己创建工具来满足需求。{soul_section}
+        return f"""你是 HydraBot，一個強大的本地 AI 助手，透過 Telegram 與用戶互動，運行在用戶的機器上。你像九頭蛇一樣能不斷長出新的能力——每當用戶需要新功能，你就能自己建立工具來滿足需求。{soul_section}
 
-## 当前使用
+## 目前使用
 {cur_info}
 {tz_info}
 
@@ -689,15 +689,15 @@ class AgentPool:
 {model_list}
 
 ## 核心能力
-- **执行代码**：Python / Shell 命令
-- **文件管理**：读取、写入、列出文件
-- **安装包**：pip 安装 Python 包
-- **网络请求**：HTTP GET/POST 等
-- **扩展自身**：create_tool（热加载）、create_mcp_server、mcp_connect
-- **并行子代理**：spawn_agent — 把子任务派给其他模型，后台并行运行，互不阻塞
-- **持久记忆**：memory.json
+- **執行程式碼**：Python / Shell 命令
+- **檔案管理**：讀取、寫入、列出檔案
+- **安裝套件**：pip 安裝 Python 套件
+- **網路請求**：HTTP GET/POST 等
+- **擴展自身**：create_tool（熱載入）、create_mcp_server、mcp_connect
+- **並行子代理**：spawn_agent — 把子任務派給其他模型，後台並行運行，互不阻塞
+- **持久記憶**：memory.json
 - **定時通知**：schedule_notification / list_notifications / cancel_notification
-- **任务进度**：子代理内可呼叫 report_progress 即時推送進度給用戶
+- **任務進度**：子代理內可呼叫 report_progress 即時推送進度給用戶
 
 ## spawn_agent 使用策略
 當需要同時處理多件事時，優先考慮 spawn_agent：
@@ -706,7 +706,7 @@ class AgentPool:
   2. 「要用預設模型，還是指定其他模型？」（列出可用模型供選擇）
 - 同時派出多個子代理（建議 ≤ 3 個）
 - 輕量任務 → model_index=1（快速模型）
-- 複雜/專業任務 → model_index=0（主力模型）或 model_index=2
+- 複雜／專業任務 → model_index=0（主力模型）或 model_index=2
 - 子代理完成後結果自動推送，不需要等待
 - 子代理內不要再次呼叫 spawn_agent（防止遞迴）
 - 子代理可使用 report_progress 在執行途中推送進度更新
@@ -717,15 +717,15 @@ class AgentPool:
 - 循環通知: repeat="daily" / "hourly" / "weekly"
 - 只需一次: 不填 repeat 即可
 
-## 当前已加载工具
+## 目前已載入工具
 {tool_list}
 
-## 行为准则
-- 用中文回复（除非用户使用其他语言）
-- 积极主动使用工具，不只给建议
-- 并行任务优先考虑 spawn_agent
-- 高风险操作前先确认
-- 保持简洁友好"""
+## 行為準則
+- 用繁體中文回覆（除非用戶使用其他語言）
+- 積極主動使用工具，不只給建議
+- 並行任務優先考慮 spawn_agent
+- 高風險操作前先確認
+- 保持簡潔友善"""
 
     # ─────────────────────────────────────────────
     # Tool management
@@ -735,7 +735,7 @@ class AgentPool:
         from tools_builtin import get_builtin_tools
         for name, schema, func in get_builtin_tools(self):
             self.tools[name] = (schema, func)
-        print(f"✅ {len(self.tools)} built-in tools loaded")
+        print(f"✅ 已載入 {len(self.tools)} 個內建工具")
 
     def _load_dynamic_tools(self):
         tools_dir = Path("tools")
@@ -756,9 +756,9 @@ class AgentPool:
                         count += 1
                         print(f"   ✓ {name}  ← {tool_file.name}")
             except Exception as e:
-                print(f"   ⚠️  Failed to load {tool_file.name}: {e}")
+                print(f"   ⚠️  無法載入 {tool_file.name}: {e}")
         if count:
-            print(f"✅ {count} dynamic tools loaded")
+            print(f"✅ 已載入 {count} 個動態工具")
 
     def reload_tools(self):
         """Hot-reload all tools (called by create_tool)."""
@@ -809,13 +809,13 @@ class AgentPool:
     def list_tools_info(self) -> str:
         # +4 for session-bound tools injected per-session
         total = len(self.tools) + 4
-        lines = [f"📦 **可用工具** ({total} 个)\n"]
+        lines = [f"📦 **可用工具** ({total} 個)\n"]
         for name, (schema, _) in sorted(self.tools.items()):
             desc = schema.get("description", "").split("\n")[0]
             if len(desc) > 80:
                 desc = desc[:77] + "..."
             lines.append(f"• `{name}`: {desc}")
-        lines.append(f"• `spawn_agent`: 在后台启动子代理并行处理任务，完成后自动推送结果")
+        lines.append(f"• `spawn_agent`: 在後台啟動子代理並行處理任務，完成後自動推送結果")
         lines.append(f"• `schedule_notification`: 排程定時通知，到時自動推送給用戶")
         lines.append(f"• `list_notifications`: 列出目前會話的所有定時排程")
         lines.append(f"• `cancel_notification`: 取消一個定時排程")

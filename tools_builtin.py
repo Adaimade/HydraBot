@@ -37,7 +37,7 @@ def get_builtin_tools(agent: "Agent") -> list:
             with redirect_stdout(buf_out), redirect_stderr(buf_err):
                 exec(compile(code, "<agent>", "exec"), agent._py_ns)
         except Exception:
-            return f"❌ 执行错误:\n```\n{traceback.format_exc()}\n```"
+            return f"❌ 執行錯誤:\n```\n{traceback.format_exc()}\n```"
 
         out = buf_out.getvalue()
         err = buf_err.getvalue()
@@ -46,7 +46,7 @@ def get_builtin_tools(agent: "Agent") -> list:
             parts.append(f"```\n{out.rstrip()}\n```")
         if err:
             parts.append(f"⚠️ stderr:\n```\n{err.rstrip()}\n```")
-        return "\n".join(parts) or "✅ 执行成功（无输出）"
+        return "\n".join(parts) or "✅ 執行成功（無輸出）"
 
     # ─────────────────────────────────────────────────────────────
     # execute_shell
@@ -68,10 +68,10 @@ def get_builtin_tools(agent: "Agent") -> list:
                 parts.append(f"```\n{r.stdout.rstrip()}\n```")
             if r.stderr.strip():
                 parts.append(f"stderr:\n```\n{r.stderr.rstrip()}\n```")
-            parts.append(f"返回码: {r.returncode}")
+            parts.append(f"返回碼: {r.returncode}")
             return "\n".join(parts)
         except subprocess.TimeoutExpired:
-            return f"❌ 超时（{timeout}s）"
+            return f"❌ 超時（{timeout}s）"
         except Exception as e:
             return f"❌ {e}"
 
@@ -83,14 +83,14 @@ def get_builtin_tools(agent: "Agent") -> list:
         try:
             p = Path(path)
             if not p.exists():
-                return f"❌ 文件不存在: {path}"
+                return f"❌ 檔案不存在: {path}"
             lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
             total = len(lines)
             end = min(offset + limit, total)
             excerpt = "\n".join(
                 f"{i + offset + 1:4d} | {l}" for i, l in enumerate(lines[offset:end])
             )
-            header = f"📄 {path}  (行 {offset+1}–{end} / 共 {total} 行)\n"
+            header = f"📄 {path}  （第 {offset+1}–{end} 行 / 共 {total} 行）\n"
             return header + f"```\n{excerpt}\n```"
         except Exception as e:
             return f"❌ {e}"
@@ -105,7 +105,7 @@ def get_builtin_tools(agent: "Agent") -> list:
             p.parent.mkdir(parents=True, exist_ok=True)
             with p.open(mode, encoding="utf-8") as f:
                 f.write(content)
-            return f"✅ 已写入 {path}（{p.stat().st_size:,} bytes）"
+            return f"✅ 已寫入 {path}（{p.stat().st_size:,} bytes）"
         except Exception as e:
             return f"❌ {e}"
 
@@ -117,7 +117,7 @@ def get_builtin_tools(agent: "Agent") -> list:
         try:
             p = Path(path)
             if not p.exists():
-                return f"❌ 路径不存在: {path}"
+                return f"❌ 路徑不存在: {path}"
             items = sorted(p.glob(pattern))[:max_items]
             lines = [f"📁 {p.absolute()}/"]
             for item in items:
@@ -143,10 +143,10 @@ def get_builtin_tools(agent: "Agent") -> list:
                 capture_output=True, text=True, timeout=120,
             )
             if r.returncode == 0:
-                return f"✅ 已安装: {package}"
-            return f"❌ 安装失败:\n```\n{r.stderr[-600:]}\n```"
+                return f"✅ 已安裝: {package}"
+            return f"❌ 安裝失敗:\n```\n{r.stderr[-600:]}\n```"
         except subprocess.TimeoutExpired:
-            return "❌ 安装超时"
+            return "❌ 安裝超時"
         except Exception as e:
             return f"❌ {e}"
 
@@ -163,7 +163,7 @@ def get_builtin_tools(agent: "Agent") -> list:
     def create_tool(tool_name: str, tool_code: str) -> str:
         """Write a tool module to tools/ and hot-reload."""
         if not tool_name.replace("_", "").isalnum():
-            return "❌ 工具名只能包含字母、数字、下划线"
+            return "❌ 工具名稱只能包含字母、數字、底線（_）"
 
         # Prevent overwriting built-in or session-bound tools
         if tool_name in agent.tools or tool_name in _SESSION_TOOL_NAMES:
@@ -176,7 +176,7 @@ def get_builtin_tools(agent: "Agent") -> list:
         try:
             path.write_text(tool_code, encoding="utf-8")
         except Exception as e:
-            return f"❌ 写入失败: {e}"
+            return f"❌ 寫入失敗: {e}"
 
         # Validate by importing
         try:
@@ -186,22 +186,22 @@ def get_builtin_tools(agent: "Agent") -> list:
             spec.loader.exec_module(mod)
             if not hasattr(mod, "get_tools"):
                 path.unlink()
-                return "❌ 工具文件必须包含 get_tools() 函数"
+                return "❌ 工具檔案必須包含 get_tools() 函式"
             loaded = mod.get_tools()
             names = [n for n, _, _ in loaded]
         except SyntaxError as e:
             path.unlink(missing_ok=True)
-            return f"❌ 语法错误: {e}"
+            return f"❌ 語法錯誤: {e}"
         except Exception:
             path.unlink(missing_ok=True)
-            return f"❌ 加载失败:\n```\n{traceback.format_exc()}\n```"
+            return f"❌ 載入失敗:\n```\n{traceback.format_exc()}\n```"
 
         # Hot-reload
         agent.reload_tools()
 
         return (
-            f"✅ 工具已创建: `{path}`\n"
-            f"已加载工具: {', '.join(f'`{n}`' for n in names)}\n"
+            f"✅ 工具已建立: `{path}`\n"
+            f"已載入工具: {', '.join(f'`{n}`' for n in names)}\n"
             f"可以立即使用！"
         )
 
@@ -263,10 +263,10 @@ def get_builtin_tools(agent: "Agent") -> list:
         try:
             path.write_text(server_code, encoding="utf-8")
             return (
-                f"✅ MCP 服务器已创建: `{path}`\n\n"
-                f"启动命令: `python {path}`\n\n"
-                f"连接命令（在对话中使用）:\n"
-                f"用 `mcp_connect` 工具，command 参数填: `python {path}`"
+                f"✅ MCP 伺服器已建立: `{path}`\n\n"
+                f"啟動命令: `python {path}`\n\n"
+                f"連線命令（在對話中使用）:\n"
+                f"用 `mcp_connect` 工具，command 參數填: `python {path}`"
             )
         except Exception as e:
             return f"❌ {e}"
@@ -300,9 +300,9 @@ def get_builtin_tools(agent: "Agent") -> list:
                 bufsize=1,
             )
         except FileNotFoundError:
-            return f"❌ 命令未找到: {command}"
+            return f"❌ 找不到命令: {command}"
         except Exception as e:
-            return f"❌ 启动失败: {e}"
+            return f"❌ 啟動失敗: {e}"
 
         lock = threading.Lock()
         req_counter = [0]
@@ -327,11 +327,11 @@ def get_builtin_tools(agent: "Agent") -> list:
             resp = call_mcp("tools/list")
         except Exception as e:
             proc.terminate()
-            return f"❌ MCP 通信失败: {e}"
+            return f"❌ MCP 通訊失敗: {e}"
 
         if "error" in resp:
             proc.terminate()
-            return f"❌ MCP 错误: {resp['error']}"
+            return f"❌ MCP 錯誤: {resp['error']}"
 
         tools = resp.get("result", {}).get("tools", [])
         sname = server_name or command.split()[0]
@@ -341,11 +341,11 @@ def get_builtin_tools(agent: "Agent") -> list:
                 try:
                     r = call_mcp("tools/call", {"name": tn, "arguments": kwargs})
                     if "error" in r:
-                        return f"❌ MCP 错误: {r['error']}"
+                        return f"❌ MCP 錯誤: {r['error']}"
                     content = r.get("result", {}).get("content", [])
                     return "\n".join(c.get("text", "") for c in content if c.get("type") == "text") or str(r.get("result", ""))
                 except Exception as exc:
-                    return f"❌ MCP 调用失败: {exc}"
+                    return f"❌ MCP 呼叫失敗: {exc}"
             return proxy
 
         for tool in tools:
@@ -359,8 +359,8 @@ def get_builtin_tools(agent: "Agent") -> list:
 
         names = [t["name"] for t in tools]
         return (
-            f"✅ 已连接 MCP 服务器: `{sname}`\n"
-            f"加载了 {len(tools)} 个工具: {', '.join(f'`{n}`' for n in names)}"
+            f"✅ 已連線 MCP 伺服器: `{sname}`\n"
+            f"已載入 {len(tools)} 個工具: {', '.join(f'`{n}`' for n in names)}"
         )
 
     # ─────────────────────────────────────────────────────────────
@@ -380,28 +380,28 @@ def get_builtin_tools(agent: "Agent") -> list:
 
         if action == "set":
             if value is None:
-                return "❌ 需要 value 参数"
+                return "❌ 需要 value 參數"
             memory[key] = value
             save()
-            return f"✅ 已记住 `{key}`"
+            return f"✅ 已記住 `{key}`"
 
         elif action == "get":
             if key == "*":
-                return ("📝 所有记忆:\n" + "\n".join(f"• `{k}`: {v}" for k, v in memory.items())) if memory else "📝 记忆为空"
+                return ("📝 所有記憶:\n" + "\n".join(f"• `{k}`: {v}" for k, v in memory.items())) if memory else "📝 記憶為空"
             v = memory.get(key)
-            return f"📝 `{key}`: {v}" if v is not None else f"❓ 未找到: `{key}`"
+            return f"📝 `{key}`: {v}" if v is not None else f"❓ 找不到: `{key}`"
 
         elif action == "list":
-            return ("📝 键列表:\n" + "\n".join(f"• `{k}`" for k in memory)) if memory else "📝 记忆为空"
+            return ("📝 鍵列表:\n" + "\n".join(f"• `{k}`" for k in memory)) if memory else "📝 記憶為空"
 
         elif action == "delete":
             if key in memory:
                 del memory[key]
                 save()
-                return f"✅ 已删除 `{key}`"
-            return f"❓ 未找到: `{key}`"
+                return f"✅ 已刪除 `{key}`"
+            return f"❓ 找不到: `{key}`"
 
-        return f"❌ 未知操作: {action}（支持: set / get / list / delete）"
+        return f"❌ 未知操作: {action}（支援: set / get / list / delete）"
 
     # ─────────────────────────────────────────────────────────────
     # edit_soul
@@ -428,7 +428,7 @@ def get_builtin_tools(agent: "Agent") -> list:
                 soul_file.unlink()
             return "✅ 人設已清除（SOUL.md 已刪除）"
 
-        return f"❌ 未知操作: {action}（支持: get / set / clear）"
+        return f"❌ 未知操作: {action}（支援: get / set / clear）"
 
     # ─────────────────────────────────────────────────────────────
     # Schemas
@@ -437,23 +437,23 @@ def get_builtin_tools(agent: "Agent") -> list:
     return [
         ("execute_python", {
             "name": "execute_python",
-            "description": "执行 Python 代码并返回输出。变量在同一会话中持久化。",
+            "description": "執行 Python 程式碼並返回輸出。變數在同一會話中持久化。",
             "input_schema": {
                 "type": "object",
-                "properties": {"code": {"type": "string", "description": "要执行的 Python 代码"}},
+                "properties": {"code": {"type": "string", "description": "要執行的 Python 程式碼"}},
                 "required": ["code"],
             },
         }, execute_python),
 
         ("execute_shell", {
             "name": "execute_shell",
-            "description": "执行 Shell 命令（git、npm、系统命令等）。",
+            "description": "執行 Shell 命令（git、npm、系統命令等）。",
             "input_schema": {
                 "type": "object",
                 "properties": {
                     "command": {"type": "string", "description": "Shell 命令"},
-                    "timeout":  {"type": "integer", "description": "超时秒数（默认 30）"},
-                    "cwd":      {"type": "string",  "description": "工作目录（可选）"},
+                    "timeout":  {"type": "integer", "description": "逾時秒數（預設 30）"},
+                    "cwd":      {"type": "string",  "description": "工作目錄（可選）"},
                 },
                 "required": ["command"],
             },
@@ -461,13 +461,13 @@ def get_builtin_tools(agent: "Agent") -> list:
 
         ("read_file", {
             "name": "read_file",
-            "description": "读取文件内容（支持分页）。",
+            "description": "讀取檔案內容（支援分頁）。",
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "path":   {"type": "string",  "description": "文件路径"},
-                    "offset": {"type": "integer", "description": "起始行（默认 0）"},
-                    "limit":  {"type": "integer", "description": "读取行数（默认 200）"},
+                    "path":   {"type": "string",  "description": "檔案路徑"},
+                    "offset": {"type": "integer", "description": "起始行（預設 0）"},
+                    "limit":  {"type": "integer", "description": "讀取行數（預設 200）"},
                 },
                 "required": ["path"],
             },
@@ -475,13 +475,13 @@ def get_builtin_tools(agent: "Agent") -> list:
 
         ("write_file", {
             "name": "write_file",
-            "description": "写入内容到文件（自动创建父目录）。",
+            "description": "寫入內容到檔案（自動建立父目錄）。",
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "path":    {"type": "string", "description": "文件路径"},
-                    "content": {"type": "string", "description": "写入内容"},
-                    "mode":    {"type": "string", "description": "'w' 覆盖（默认）或 'a' 追加", "enum": ["w", "a"]},
+                    "path":    {"type": "string", "description": "檔案路徑"},
+                    "content": {"type": "string", "description": "寫入內容"},
+                    "mode":    {"type": "string", "description": "'w' 覆蓋（預設）或 'a' 附加", "enum": ["w", "a"]},
                 },
                 "required": ["path", "content"],
             },
@@ -489,23 +489,23 @@ def get_builtin_tools(agent: "Agent") -> list:
 
         ("list_files", {
             "name": "list_files",
-            "description": "列出目录中的文件。",
+            "description": "列出目錄中的檔案。",
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "path":      {"type": "string",  "description": "目录路径（默认当前目录）"},
-                    "pattern":   {"type": "string",  "description": "glob 模式（默认 *）"},
-                    "max_items": {"type": "integer", "description": "最多显示数量（默认 60）"},
+                    "path":      {"type": "string",  "description": "目錄路徑（預設目前目錄）"},
+                    "pattern":   {"type": "string",  "description": "glob 模式（預設 *）"},
+                    "max_items": {"type": "integer", "description": "最多顯示數量（預設 60）"},
                 },
             },
         }, list_files),
 
         ("install_package", {
             "name": "install_package",
-            "description": "用 pip 安装 Python 包。",
+            "description": "用 pip 安裝 Python 套件。",
             "input_schema": {
                 "type": "object",
-                "properties": {"package": {"type": "string", "description": "包名，如 'requests' 或 'pandas==2.0.0'"}},
+                "properties": {"package": {"type": "string", "description": "套件名稱，如 'requests' 或 'pandas==2.0.0'"}},
                 "required": ["package"],
             },
         }, install_package),
@@ -513,13 +513,13 @@ def get_builtin_tools(agent: "Agent") -> list:
         ("create_tool", {
             "name": "create_tool",
             "description": (
-                "创建新工具文件（保存到 tools/ 目录并立即热加载）。\n"
-                "文件必须包含 get_tools() 函数，返回 [(name, schema, func), ...] 列表。\n"
-                "模板:\n"
+                "建立新工具檔案（儲存到 tools/ 目錄並立即熱載入）。\n"
+                "檔案必須包含 get_tools() 函式，返回 [(name, schema, func), ...] 列表。\n"
+                "範本:\n"
                 "```python\n"
                 "def get_tools():\n"
                 "    def my_func(param: str) -> str:\n"
-                "        return f'结果: {param}'\n"
+                "        return f'結果: {param}'\n"
                 "    return [('my_func', {\n"
                 "        'name': 'my_func',\n"
                 "        'description': '工具描述',\n"
@@ -534,8 +534,8 @@ def get_builtin_tools(agent: "Agent") -> list:
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "tool_name": {"type": "string", "description": "工具文件名（不含 .py）"},
-                    "tool_code": {"type": "string", "description": "工具的 Python 代码"},
+                    "tool_name": {"type": "string", "description": "工具檔案名稱（不含 .py）"},
+                    "tool_code": {"type": "string", "description": "工具的 Python 程式碼"},
                 },
                 "required": ["tool_name", "tool_code"],
             },
@@ -543,21 +543,21 @@ def get_builtin_tools(agent: "Agent") -> list:
 
         ("list_tools", {
             "name": "list_tools",
-            "description": "列出所有当前可用的工具。",
+            "description": "列出所有目前可用的工具。",
             "input_schema": {"type": "object", "properties": {}},
         }, list_tools),
 
         ("http_request", {
             "name": "http_request",
-            "description": "发送 HTTP 请求。",
+            "description": "發送 HTTP 請求。",
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "url":     {"type": "string", "description": "请求 URL"},
-                    "method":  {"type": "string", "description": "HTTP 方法（默认 GET）", "enum": ["GET","POST","PUT","DELETE","PATCH","HEAD"]},
-                    "headers": {"type": "object", "description": "请求头（dict）"},
-                    "body":    {"type": "string", "description": "请求体"},
-                    "timeout": {"type": "integer", "description": "超时秒数（默认 30）"},
+                    "url":     {"type": "string", "description": "請求 URL"},
+                    "method":  {"type": "string", "description": "HTTP 方法（預設 GET）", "enum": ["GET","POST","PUT","DELETE","PATCH","HEAD"]},
+                    "headers": {"type": "object", "description": "請求標頭（dict）"},
+                    "body":    {"type": "string", "description": "請求本體"},
+                    "timeout": {"type": "integer", "description": "逾時秒數（預設 30）"},
                 },
                 "required": ["url"],
             },
@@ -566,15 +566,15 @@ def get_builtin_tools(agent: "Agent") -> list:
         ("create_mcp_server", {
             "name": "create_mcp_server",
             "description": (
-                "创建 MCP（Model Context Protocol）服务器脚本，保存到 mcp_servers/ 目录。\n"
-                "MCP 服务器通过 stdio 以 JSON-RPC 2.0 格式通信。\n"
-                "最简模板:\n"
+                "建立 MCP（Model Context Protocol）伺服器腳本，儲存到 mcp_servers/ 目錄。\n"
+                "MCP 伺服器透過 stdio 以 JSON-RPC 2.0 格式通訊。\n"
+                "最簡範本:\n"
                 "```python\n"
                 "import sys, json\n"
                 "def handle(req):\n"
                 "    m = req.get('method')\n"
                 "    if m == 'tools/list':\n"
-                "        return {'result': {'tools': [{'name': 'hello', 'description': '示例', 'inputSchema': {'type':'object','properties':{'name':{'type':'string'}},'required':['name']}}]}}\n"
+                "        return {'result': {'tools': [{'name': 'hello', 'description': '範例', 'inputSchema': {'type':'object','properties':{'name':{'type':'string'}},'required':['name']}}]}}\n"
                 "    elif m == 'tools/call':\n"
                 "        args = req['params']['arguments']\n"
                 "        return {'result': {'content': [{'type':'text','text':f'Hello, {args[\"name\"]}!'}]}}\n"
@@ -587,8 +587,8 @@ def get_builtin_tools(agent: "Agent") -> list:
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "server_name": {"type": "string", "description": "服务器名称"},
-                    "server_code": {"type": "string", "description": "服务器 Python 代码"},
+                    "server_name": {"type": "string", "description": "伺服器名稱"},
+                    "server_code": {"type": "string", "description": "伺服器 Python 程式碼"},
                 },
                 "required": ["server_name", "server_code"],
             },
@@ -596,12 +596,12 @@ def get_builtin_tools(agent: "Agent") -> list:
 
         ("mcp_connect", {
             "name": "mcp_connect",
-            "description": "启动 MCP 服务器进程并将其工具加载到当前 agent 中。",
+            "description": "啟動 MCP 伺服器程序並將其工具載入到目前 agent 中。",
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "command":     {"type": "string", "description": "启动命令，如 'python mcp_servers/myserver.py'"},
-                    "server_name": {"type": "string", "description": "自定义服务器名称（可选）"},
+                    "command":     {"type": "string", "description": "啟動命令，如 'python mcp_servers/myserver.py'"},
+                    "server_name": {"type": "string", "description": "自訂伺服器名稱（可選）"},
                 },
                 "required": ["command"],
             },
@@ -609,12 +609,12 @@ def get_builtin_tools(agent: "Agent") -> list:
 
         ("remember", {
             "name": "remember",
-            "description": "持久化记忆管理（存储在 memory.json）。",
+            "description": "持久化記憶管理（儲存於 memory.json）。",
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "key":    {"type": "string", "description": "键名；用 '*' 配合 get 读取全部"},
-                    "value":  {"type": "string", "description": "存储值（action=set 时必填）"},
+                    "key":    {"type": "string", "description": "鍵名；用 '*' 配合 get 讀取全部"},
+                    "value":  {"type": "string", "description": "儲存值（action=set 時必填）"},
                     "action": {"type": "string", "description": "操作: set / get / list / delete", "enum": ["set","get","list","delete"]},
                 },
                 "required": ["key", "action"],
