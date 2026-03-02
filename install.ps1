@@ -142,22 +142,26 @@ Write-Host ""
 Write-Host "  [3/6] 下载核心文件" -ForegroundColor White
 Hr
 
-$coreFiles = @("agent.py","bot.py","main.py","tools_builtin.py","requirements.txt","update.sh","update.ps1","hydrabot","hydrabot.bat","VERSION")
+$coreFiles = @("agent.py","bot.py","main.py","tools_builtin.py","scheduler.py","sub_agent_manager.py","requirements.txt","hydrabot","hydrabot.bat","VERSION")
+$scriptFiles = @("scripts/update.sh","scripts/update.ps1","scripts/start.sh")
 $failed = @()
-foreach ($f in $coreFiles) {
+
+# Create directories first
+New-Item -ItemType Directory -Force -Path "$INSTALL_DIR\tools"      | Out-Null
+New-Item -ItemType Directory -Force -Path "$INSTALL_DIR\mcp_servers" | Out-Null
+New-Item -ItemType Directory -Force -Path "$INSTALL_DIR\scripts"     | Out-Null
+
+foreach ($f in ($coreFiles + $scriptFiles)) {
     Write-Host "  $($f.PadRight(30))" -NoNewline
+    $dest = "$INSTALL_DIR\$($f -replace '/','\\')"
     try {
-        Invoke-WebRequest -Uri "$REPO/$f" -OutFile "$INSTALL_DIR\$f" -UseBasicParsing
+        Invoke-WebRequest -Uri "$REPO/$f" -OutFile $dest -UseBasicParsing
         Write-Host "OK" -ForegroundColor Green
     } catch {
         Write-Host "SKIP (keep old)" -ForegroundColor Yellow
         $failed += $f
     }
 }
-
-# Create directories
-New-Item -ItemType Directory -Force -Path "$INSTALL_DIR\tools"      | Out-Null
-New-Item -ItemType Directory -Force -Path "$INSTALL_DIR\mcp_servers" | Out-Null
 
 if ($failed.Count -gt 0) {
     Warn "以下文件下载失败: $($failed -join ', ')"
