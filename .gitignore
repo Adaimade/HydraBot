@@ -31,3 +31,5 @@ desktop.ini
 .idea/
 *.swp
 *.swo
+.spectra/
+openspec/.vector-search.db*
