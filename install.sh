@@ -175,9 +175,14 @@ if [[ -z "$PYTHON" ]]; then
         debian)
             inf "使用 apt 安裝 Python 3.11..."
             run_cmd apt-get update -qq
-            run_cmd apt-get install -y python3.11 python3.11-venv python3-pip python3-venv \
-                                    python3-full -qq 2>/dev/null \
-            || run_cmd apt-get install -y python3 python3-venv python3-pip -qq
+            # 分別安裝關鍵組件，避免單一包不存在導致整個命令失敗
+            run_cmd apt-get install -y python3.11 -qq 2>/dev/null || \
+            run_cmd apt-get install -y python3 -qq
+            # 安裝 venv 和 pip（容器環境下可能不存在 python3-full）
+            run_cmd apt-get install -y python3.11-venv -qq 2>/dev/null || \
+            run_cmd apt-get install -y python3-venv -qq 2>/dev/null || \
+            true  # venv 稍後若缺失可在 fallback 階段安裝
+            run_cmd apt-get install -y python3-pip -qq 2>/dev/null || true
             for cmd in python3.11 python3 python; do
                 python_ok "$cmd" && { PYTHON="$cmd"; break; }
             done
