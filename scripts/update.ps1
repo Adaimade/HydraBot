@@ -25,7 +25,7 @@ Set-Location $SCRIPT_DIR
 
 # Verify we're in a HydraBot directory
 if (-not ((Test-Path "main.py") -and (Test-Path "agent.py") -and (Test-Path "requirements.txt"))) {
-    Err "请在 HydraBot 安装目录下运行此脚本"
+    Err "請在 HydraBot 安裝目錄下執行此腳本"
 }
 
 # ── Banner ─────────────────────────────────────────────────────
@@ -42,23 +42,23 @@ $REMOTE_VER = try {
     "unknown"
 }
 
-Inf "当前版本: $LOCAL_VER"
+Inf "目前版本: $LOCAL_VER"
 Inf "最新版本: $REMOTE_VER"
 
 if ($LOCAL_VER -eq $REMOTE_VER -and $LOCAL_VER -ne "unknown") {
     Write-Host ""
     Green "✨ 已是最新版本！"
-    DGray "如需强制更新，请运行: powershell -ExecutionPolicy Bypass -File scripts\update.ps1 -Force"
+    DGray "如需強制更新，請執行: powershell -ExecutionPolicy Bypass -File scripts\update.ps1 -Force"
     Write-Host ""
     if ($args -notcontains "-Force") { exit 0 }
 }
 
 Write-Host ""
-Yellow "即将更新以下核心文件（config.json / 自定义 tools / memory 不受影响）:"
+Yellow "即將更新以下核心檔案（config.json / 自定義 tools / memory 不受影響）："
 Write-Host "  agent.py  bot.py  main.py  tools_builtin.py  requirements.txt  scripts\update.ps1  hydrabot.bat  VERSION" -ForegroundColor DarkGray
 Write-Host ""
 
-$confirm = Read-Host "继续更新？[Y/n]"
+$confirm = Read-Host "繼續更新？[Y/n]"
 if ($confirm -match "^[Nn]$") {
     Write-Host "  已取消。`n" -ForegroundColor DarkGray
     exit 0
@@ -68,7 +68,7 @@ Write-Host ""
 # ── Backup config ──────────────────────────────────────────────
 if (Test-Path "config.json") {
     Copy-Item "config.json" "config.json.bak"
-    Ok "已备份 config.json → config.json.bak"
+    Ok "已備份 config.json → config.json.bak"
 }
 
 # ── Count existing tools (before update) ───────────────────────
@@ -79,7 +79,7 @@ $OLD_TOOLS = if (Test-Path "tools_builtin.py") {
 }
 
 # ── Download updates ───────────────────────────────────────────
-Write-Host "  📥 下载更新..."
+Write-Host "  📥 下載更新..."
 Hr
 
 $CORE_FILES = @("agent.py","bot.py","main.py","tools_builtin.py","requirements.txt","scripts/update.ps1","hydrabot.bat","VERSION")
@@ -96,13 +96,13 @@ foreach ($f in $CORE_FILES) {
         Write-Host "✓" -ForegroundColor Green
     } catch {
         if (Test-Path "$f.tmp") { Remove-Item "$f.tmp" -Force }
-        Write-Host "⚠ (保留旧版)" -ForegroundColor Yellow
+        Write-Host "⚠ (保留舊版)" -ForegroundColor Yellow
         $FAILED += $f
     }
 }
 
 # ── Update dependencies ────────────────────────────────────────
-Write-Host "`n  📦 更新 Python 依赖...`n" -ForegroundColor Cyan
+Write-Host "`n  📦 更新 Python 依賴...`n" -ForegroundColor Cyan
 
 $PYTHON = $null
 foreach ($cmd in @("python", "python3")) {
@@ -129,9 +129,9 @@ if ($PYTHON) {
     }
 
     & $PYTHON -m pip install -r requirements.txt -q --upgrade --disable-pip-version-check
-    Ok "依赖已更新"
+    Ok "依賴已更新"
 } else {
-    Warn "找不到 Python，跳过依赖更新"
+    Warn "找不到 Python，略過依賴更新"
 }
 
 # ── Show new tools ────────────────────────────────────────────
@@ -147,6 +147,7 @@ Write-Host ""
 Hr
 
 Write-Host "  ✨ 更新完成！" -ForegroundColor Green
+
 Write-Host ""
 Write-Host "  版本:    " -NoNewline
 Write-Host "$LOCAL_VER" -ForegroundColor DarkGray -NoNewline
@@ -156,22 +157,22 @@ Write-Host "$NEW_VER" -ForegroundColor Green
 if ($OLD_TOOLS -ne "?" -and $NEW_TOOLS -ne "?") {
     $DIFF = [int]$NEW_TOOLS - [int]$OLD_TOOLS
     if ($DIFF -gt 0) {
-        Write-Host "  内建工具: " -NoNewline
+        Write-Host "  內建工具: " -NoNewline
         Write-Host "$OLD_TOOLS" -ForegroundColor DarkGray -NoNewline
         Write-Host "  →  " -NoNewline
         Write-Host "$NEW_TOOLS" -ForegroundColor Green -NoNewline
         Write-Host "  " -NoNewline
         Write-Host "(+$DIFF 新工具)" -ForegroundColor Green
     } else {
-        Write-Host "  内建工具: " -NoNewline
-        Write-Host "$NEW_TOOLS 个" -ForegroundColor Green
+        Write-Host "  內建工具: " -NoNewline
+        Write-Host "$NEW_TOOLS 個" -ForegroundColor Green
     }
 }
 
 if ($FAILED.Count -gt 0) {
-    Warn "以下文件下载失败，已保留旧版: $($FAILED -join ', ')"
+    Warn "以下檔案下載失敗，已保留舊版: $($FAILED -join ', ')"
 }
 
 Write-Host ""
-Cyan "重启 Bot 以应用更新"
+Cyan "重啟 Bot 以套用更新"
 Write-Host ""
