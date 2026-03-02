@@ -182,7 +182,6 @@ class AgentPool:
         Each unique (chat_id, thread_id) gets its own isolated conversation history.
         """
         model_idx = self.user_model.get(session_id, 0)
-        client = self.get_client(model_idx)
 
         if session_id not in self.conversations:
             self.conversations[session_id] = []
@@ -194,6 +193,7 @@ class AgentPool:
         session_tools = self._session_tools(session_id)
 
         try:
+            client = self.get_client(model_idx)
             if client.provider == "anthropic":
                 response = self._anthropic_loop(client, list(history), session_tools, session_id)
             else:
@@ -628,6 +628,17 @@ class AgentPool:
     # System prompt
     # ─────────────────────────────────────────────
 
+    def _load_soul(self) -> str:
+        """Load SOUL.md persona file. Returns empty string if not set."""
+        soul_file = Path("SOUL.md")
+        if not soul_file.exists():
+            return ""
+        try:
+            content = soul_file.read_text(encoding="utf-8").strip()
+            return content
+        except Exception:
+            return ""
+
     def _system_prompt(self, user_id) -> str:
         tool_list = (
             ", ".join(sorted(self.tools.keys()))
@@ -654,7 +665,10 @@ class AgentPool:
             for i, m in enumerate(self.model_configs)
         )
 
-        return f"""你是 HydraBot，一个强大的本地 AI 助手，通过 Telegram 与用户交互，运行在用户的机器上。你像九头蛇一样能不断长出新的能力——每当用户需要新功能，你就能自己创建工具来满足需求。
+        soul = self._load_soul()
+        soul_section = f"\n## 人設與個性風格（SOUL.md）\n{soul}\n" if soul else ""
+
+        return f"""你是 HydraBot，一个强大的本地 AI 助手，通过 Telegram 与用户交互，运行在用户的机器上。你像九头蛇一样能不断长出新的能力——每当用户需要新功能，你就能自己创建工具来满足需求。{soul_section}
 
 ## 当前使用
 {cur_info}

@@ -195,6 +195,7 @@ class TelegramBot:
             "/tasks — 查看背景任務與進度\n"
             "/notify — 查看/管理定時通知排程\n"
             "/timezone — 查看/修改時區設定\n"
+            "/soul — 查看/清除 Bot 人設\n"
             "/status — 系统状态\n\n"
             + (f"**子代理 Bot 管理**\n{agent_cmds}\n" if agent_cmds else "")
             + "⏰ **定時通知**\n"
@@ -317,6 +318,43 @@ class TelegramBot:
                     f"修改: `/timezone UTC+8`",
                     parse_mode="Markdown",
                 )
+
+    async def cmd_soul(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        /soul        — 顯示目前人設（SOUL.md）
+        /soul clear  — 清除人設
+        """
+        if not self._ok(update.effective_user.id):
+            return
+        from pathlib import Path
+        soul_file = Path(__file__).parent / "SOUL.md"
+        args = context.args
+
+        if args and args[0].lower() == "clear":
+            if soul_file.exists():
+                soul_file.unlink()
+                await update.message.reply_text("✅ 人設已清除（SOUL.md 已刪除）")
+            else:
+                await update.message.reply_text("📝 目前沒有人設可清除")
+            return
+
+        if not soul_file.exists():
+            await update.message.reply_text(
+                "📝 **SOUL.md 尚未設定**\n\n"
+                "你可以直接告訴我你想要的人設風格，例如：\n"
+                "「幫我設定人設：你是一隻傲嬌的貓娘，說話帶點嬌氣...」\n\n"
+                "或手動編輯 `SOUL.md` 放在安裝目錄中。\n"
+                "修改後立即生效，無需重啟。",
+                parse_mode="Markdown",
+            )
+            return
+
+        content = soul_file.read_text(encoding="utf-8").strip()
+        if not content:
+            await update.message.reply_text("📝 SOUL.md 存在但內容為空")
+            return
+
+        await self._send(update, f"📝 **目前人設 (SOUL.md)**\n\n{content}")
 
     async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._ok(update.effective_user.id):
@@ -733,18 +771,15 @@ class TelegramBot:
             import requests
             from pathlib import Path
 
-            # Fetch latest VERSION from GitHub
             url = "https://raw.githubusercontent.com/Adaimade/HydraBot/main/VERSION"
-            response = requests.get(url, timeout=3)
+            # Run blocking network call in thread pool to avoid blocking the event loop
+            response = await asyncio.to_thread(requests.get, url, timeout=3)
             response.raise_for_status()
             latest = response.text.strip()
 
-            # Read local version
             version_file = Path(__file__).parent / "VERSION"
             if version_file.exists():
                 current = version_file.read_text().strip()
-
-                # Compare versions
                 if latest != current:
                     print(f"\n⚠️  新版本可用！({current} → {latest})")
                     print(f"   运行以下命令更新:")
@@ -781,6 +816,7 @@ class TelegramBot:
             BotCommand("notify",       "查看/管理定時通知排程"),
             BotCommand("timezone",     "查看/設定時區 (UTC+N)"),
             BotCommand("status",       "系统状态与会话信息"),
+            BotCommand("soul",         "查看/清除 Bot 人設（SOUL.md）"),
         ]
         if self.sub_agents is not None:
             commands += [
@@ -808,6 +844,7 @@ class TelegramBot:
         app.add_handler(CommandHandler("notify",       self.cmd_notify))
         app.add_handler(CommandHandler("timezone",     self.cmd_timezone))
         app.add_handler(CommandHandler("status",       self.cmd_status))
+        app.add_handler(CommandHandler("soul",         self.cmd_soul))
         if self.sub_agents is not None:
             app.add_handler(CommandHandler("new_agent",    self.cmd_new_agent))
             app.add_handler(CommandHandler("list_agents",  self.cmd_list_agents))
@@ -816,14 +853,25 @@ class TelegramBot:
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)
         )
 
-        auth_info = (
-            f"{len(self.authorized_users)} 个授权用户"
-            if self.authorized_users else "所有人（无限制）"
-        )
+        import datetime
+        local_tz_offset = datetime.datetime.now().astimezone().utcoffset()
+        tz_seconds = int(local_tz_offset.total_seconds())
+        tz_hours   = tz_seconds // 3600
+        tz_sign    = "+" if tz_hours >= 0 else ""
+        local_tz_str = f"UTC{tz_sign}{tz_hours}"
+
+        if self.authorized_users:
+            auth_info = f"{len(self.authorized_users)} 个 (IDs: {', '.join(str(u) for u in sorted(self.authorized_users))})"
+        else:
+            auth_info = "所有人（无限制）"
+
         print(f"🐍 HydraBot running!")
         print(f"   Models  : {len(self.pool.model_configs)} 组")
-        print(f"   Tools   : {len(self.pool.tools) + 1} 个")
+        for i, m in enumerate(self.pool.model_configs):
+            print(f"     [{i}] {m.get('name', m['model'])}  ({m['provider']} / {m['model']})")
+        print(f"   Tools   : {len(self.pool.tools) + 4} 个")
         print(f"   Access  : {auth_info}")
+        print(f"   Timezone: {local_tz_str}（本机系统时区）")
         print(f"   Session : chat_id + thread_id 双维度隔离")
         print(f"   Ctrl+C to stop\n")
 
