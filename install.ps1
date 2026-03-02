@@ -65,24 +65,24 @@ Write-Host "  https://github.com/Adaimade/HydraBot" -ForegroundColor DarkGray
 Write-Host ""
 
 # ── Risk Warning ───────────────────────────────────────────────
-Write-Host "  ⚠️  安装前请阅读以下风险提示" -ForegroundColor Yellow
+Write-Host "  ⚠️  安裝前請閱讀以下風險提示" -ForegroundColor Yellow
 Hr
 Write-Host ""
-Write-Host "  HydraBot 安装后将在你的本地机器上以后台服务形式运行。" -ForegroundColor White
-Write-Host "  请确认你了解并接受以下内容：" -ForegroundColor White
+Write-Host "  HydraBot 安裝後將在你的本地機器上以背景服務形式執行。" -ForegroundColor White
+Write-Host "  請確認你了解並接受以下內容：" -ForegroundColor White
 Write-Host ""
-Write-Host "    · 可在你的机器上执行 Python / Shell 代码" -ForegroundColor Gray
-Write-Host "    · 可读取和写入本地文件系统中的文件" -ForegroundColor Gray
-Write-Host "    · 可通过 pip 自动下载并安装第三方 Python 包" -ForegroundColor Gray
-Write-Host "    · 可发起对外部服务的网络请求" -ForegroundColor Gray
-Write-Host "    · 可在运行时自行创建并加载新工具（自我扩展）" -ForegroundColor Gray
+Write-Host "    · 可在你的機器上執行 Python / Shell 程式碼" -ForegroundColor Gray
+Write-Host "    · 可讀取和寫入本地檔案系統中的檔案" -ForegroundColor Gray
+Write-Host "    · 可透過 pip 自動下載並安裝第三方 Python 套件" -ForegroundColor Gray
+Write-Host "    · 可發起對外部服務的網路請求" -ForegroundColor Gray
+Write-Host "    · 可在執行時自行建立並載入新工具（自我擴展）" -ForegroundColor Gray
 Write-Host ""
-Write-Host "  请仅在你信任来源且理解上述权限的情况下继续。" -ForegroundColor DarkGray
+Write-Host "  請僅在你信任來源且理解上述權限的情況下繼續。" -ForegroundColor DarkGray
 Write-Host "  Only proceed if you trust the source and accept these permissions." -ForegroundColor DarkGray
 Write-Host ""
 Hr
 Write-Host ""
-$confirm = Ask "输入 yes 继续，其他任意键取消："
+$confirm = Ask "輸入 yes 繼續，其他任意鍵取消："
 if ($confirm -ne "yes") {
     Write-Host "  已取消。" -ForegroundColor DarkGray
     exit 0
@@ -90,22 +90,22 @@ if ($confirm -ne "yes") {
 
 # ── Install directory ──────────────────────────────────────────
 Write-Host ""
-Write-Host "  [1/6] 选择安装目录" -ForegroundColor White
+Write-Host "  [1/6] 選擇安裝目錄" -ForegroundColor White
 Hr
 $defaultDir = "$env:USERPROFILE\hydrabot"
-$inputDir = Ask "安装到 [$defaultDir]（直接回车使用默认）："
+$inputDir = Ask "安裝到 [$defaultDir]（直接按 Enter 使用預設）："
 if ([string]::IsNullOrWhiteSpace($inputDir)) {
     $INSTALL_DIR = $defaultDir
 } else {
     $INSTALL_DIR = $inputDir.Trim()
 }
-Inf "安装目录: $INSTALL_DIR"
+Inf "安裝目錄: $INSTALL_DIR"
 New-Item -ItemType Directory -Force -Path $INSTALL_DIR | Out-Null
-Ok "目录已就绪"
+Ok "目錄已就緒"
 
 # ── Check / Install Python ─────────────────────────────────────
 Write-Host ""
-Write-Host "  [2/6] 检查 Python 环境" -ForegroundColor White
+Write-Host "  [2/6] 檢查 Python 環境" -ForegroundColor White
 Hr
 
 function Find-Python {
@@ -122,16 +122,16 @@ function Find-Python {
 
 $PYTHON = Find-Python
 if (-not $PYTHON) {
-    Warn "未找到 Python 3.10+，尝试用 winget 自动安装..."
+    Warn "未找到 Python 3.10+，嘗試用 winget 自動安裝..."
     try {
         winget install -e --id Python.Python.3.12 --silent --accept-source-agreements --accept-package-agreements
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
         $PYTHON = Find-Python
     } catch {}
     if (-not $PYTHON) {
-        Err "无法自动安装 Python。请手动安装: https://www.python.org/downloads/ (勾选 Add to PATH)"
+        Err "無法自動安裝 Python。請手動安裝: https://www.python.org/downloads/ (勾選 Add to PATH)"
     }
-    Ok "Python 安装完成"
+    Ok "Python 安裝完成"
 }
 
 $pyver = & $PYTHON --version 2>&1
@@ -139,7 +139,7 @@ Ok "找到 $pyver ($PYTHON)"
 
 # ── Download core files ────────────────────────────────────────
 Write-Host ""
-Write-Host "  [3/6] 下载核心文件" -ForegroundColor White
+Write-Host "  [3/6] 下載核心檔案" -ForegroundColor White
 Hr
 
 $coreFiles = @("agent.py","bot.py","main.py","tools_builtin.py","scheduler.py","sub_agent_manager.py","requirements.txt","hydrabot","hydrabot.bat","VERSION")
@@ -164,45 +164,45 @@ foreach ($f in ($coreFiles + $scriptFiles)) {
 }
 
 if ($failed.Count -gt 0) {
-    Warn "以下文件下载失败: $($failed -join ', ')"
+    Warn "以下檔案下載失敗: $($failed -join ', ')"
 }
-Ok "核心文件下载完成"
+Ok "核心檔案下載完成"
 
 # ── Create venv ────────────────────────────────────────────────
 Write-Host ""
-Write-Host "  [4/6] 创建 Python 虚拟环境" -ForegroundColor White
+Write-Host "  [4/6] 建立 Python 虛擬環境" -ForegroundColor White
 Hr
 $VENV = "$INSTALL_DIR\venv"
 if (-not (Test-Path $VENV)) {
-    Inf "创建虚拟环境..."
+    Inf "建立虛擬環境..."
     & $PYTHON -m venv $VENV
 }
 $PY = "$VENV\Scripts\python.exe"
 if (-not (Test-Path $PY)) { $PY = "$VENV\bin\python" }
 
-Inf "升级 pip..."
+Inf "升級 pip..."
 & $PY -m pip install --upgrade pip -q --disable-pip-version-check
-Inf "安装依赖..."
+Inf "安裝依賴..."
 & $PY -m pip install -r "$INSTALL_DIR\requirements.txt" -q --disable-pip-version-check
-Ok "依赖安装完成"
+Ok "依賴安裝完成"
 
 # ── Config wizard ──────────────────────────────────────────────
 Write-Host ""
-Write-Host "  [5/6] 配置 HydraBot" -ForegroundColor White
+Write-Host "  [5/6] 設定 HydraBot" -ForegroundColor White
 Hr
 
 # Telegram token
 Write-Host ""
 Write-Host "  Telegram Bot Token" -ForegroundColor White
-Write-Host "  （从 @BotFather 获取，格式: 1234567890:ABCdef...）" -ForegroundColor DarkGray
+Write-Host "  （從 @BotFather 取得，格式: 1234567890:ABCdef...）" -ForegroundColor DarkGray
 $TG_TOKEN = Ask "Token："
 if ([string]::IsNullOrWhiteSpace($TG_TOKEN)) { $TG_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN" }
 
 # Authorized users
 Write-Host ""
-Write-Host "  授权用户 Telegram ID（多个用逗号分隔，留空=不限制）" -ForegroundColor White
-Write-Host "  （从 @userinfobot 获取你的 ID）" -ForegroundColor DarkGray
-$authInput = Ask "用户 ID："
+Write-Host "  授權使用者 Telegram ID（多個用逗號分隔，留空=不限制）" -ForegroundColor White
+Write-Host "  （從 @userinfobot 取得你的 ID）" -ForegroundColor DarkGray
+$authInput = Ask "使用者 ID："
 
 $authJson = "[]"
 if (-not [string]::IsNullOrWhiteSpace($authInput)) {
@@ -216,18 +216,18 @@ if (-not [string]::IsNullOrWhiteSpace($authInput)) {
 $modelsJson = "["
 $PROVIDERS  = @("anthropic","openai","google","openai-compatible")
 $DEF_MODELS = @("claude-sonnet-4-5","gpt-4o","gemini-2.0-flash","your-model")
-$DEF_NAMES  = @("主力 Claude","快速 GPT","Gemini Flash","自定义模型")
+$DEF_NAMES  = @("主力 Claude","快速 GPT","Gemini Flash","自定義模型")
 
 for ($i = 0; $i -lt 3; $i++) {
     Write-Host ""
-    $label = if ($i -eq 0) {"主力模型"} elseif ($i -eq 1) {"快速/子代理"} else {"备用模型"}
+    $label = if ($i -eq 0) {"主力模型"} elseif ($i -eq 1) {"快速／子代理"} else {"備用模型"}
     Write-Host "  --- 模型 #$i ($label) ---" -ForegroundColor Cyan
     Write-Host "  Provider:" -ForegroundColor White
     Write-Host "    0 = Anthropic (Claude)" -ForegroundColor DarkGray
     Write-Host "    1 = OpenAI (GPT)" -ForegroundColor DarkGray
     Write-Host "    2 = Google (Gemini)" -ForegroundColor DarkGray
-    Write-Host "    3 = OpenAI-compatible (自定义端点)" -ForegroundColor DarkGray
-    $pIdx = Ask "选择 (默认 0)："
+    Write-Host "    3 = OpenAI-compatible（自定義端點）" -ForegroundColor DarkGray
+    $pIdx = Ask "選擇（預設 0）："
     if ($pIdx -notmatch "^[0123]$") { $pIdx = "0" }
     $provider = $PROVIDERS[$pIdx]
 
@@ -236,7 +236,7 @@ for ($i = 0; $i -lt 3; $i++) {
     if ([string]::IsNullOrWhiteSpace($apiKey)) { $apiKey = "YOUR_MODEL_API_KEY" }
 
     $defModel = $DEF_MODELS[$pIdx]
-    Write-Host "  模型名称 [默认: $defModel]:" -ForegroundColor White
+    Write-Host "  模型名稱 [預設: $defModel]:" -ForegroundColor White
     $modelName = Ask "Model："
     if ([string]::IsNullOrWhiteSpace($modelName)) { $modelName = $defModel }
 
@@ -260,7 +260,7 @@ for ($i = 0; $i -lt 3; $i++) {
       "base_url": $baseUrl
     }
 "@
-    Ok "模型 #$i 已设置 ($provider / $modelName)"
+    Ok "模型 #$i 已設定（$provider / $modelName）"
 }
 $modelsJson += "`n  ]"
 
@@ -284,14 +284,14 @@ Ok "config.json 已写入"
 
 # ── Setup launcher ────────────────────────────────────────────
 Write-Host ""
-Write-Host "  [6/6] 设置启动脚本" -ForegroundColor White
+Write-Host "  [6/6] 設定啟動腳本" -ForegroundColor White
 Hr
 
-# hydrabot.bat 已从 GitHub 下载，只需确保它可执行
+# hydrabot.bat 已從 GitHub 下載，只需確認它存在
 if (Test-Path "$INSTALL_DIR\hydrabot.bat") {
-    Ok "hydrabot.bat 已就绪"
+    Ok "hydrabot.bat 已就緒"
 } else {
-    Warn "hydrabot.bat 未找到，请手动检查下载"
+    Warn "hydrabot.bat 未找到，請手動檢查下載"
 }
 
 # Add to PATH (user scope)
@@ -302,27 +302,27 @@ if ($userPath -notlike "*$INSTALL_DIR*") {
         "$userPath;$INSTALL_DIR",
         "User"
     )
-    Ok "已将 $INSTALL_DIR 加入用户 PATH"
+    Ok "已將 $INSTALL_DIR 加入使用者 PATH"
 } else {
-    Ok "PATH 已包含安装目录"
+    Ok "PATH 已包含安裝目錄"
 }
 
 # ── Done ───────────────────────────────────────────────────────
 Write-Host ""
 Hr
 Write-Host ""
-Write-Host "  ✅  HydraBot 安装完成！" -ForegroundColor Green
+Write-Host "  ✅  HydraBot 安裝完成！" -ForegroundColor Green
 Write-Host ""
-Write-Host "  启动 Bot:" -ForegroundColor White
+Write-Host "  啟動 Bot：" -ForegroundColor White
 Write-Host "    hydrabot start" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  或直接运行:" -ForegroundColor White
+Write-Host "  或直接執行：" -ForegroundColor White
 Write-Host "    cd $INSTALL_DIR" -ForegroundColor Cyan
 Write-Host "    $PY main.py" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  更新命令:" -ForegroundColor White
+Write-Host "  更新指令：" -ForegroundColor White
 Write-Host "    hydrabot update" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  查看帮助:" -ForegroundColor White
+Write-Host "  查看說明：" -ForegroundColor White
 Write-Host "    hydrabot help" -ForegroundColor Cyan
 Write-Host ""
