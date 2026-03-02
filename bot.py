@@ -6,6 +6,7 @@ Telegram bot interface for HydraBot.
 import asyncio
 import logging
 import platform
+import re
 import sys
 from pathlib import Path
 from telegram import Update, BotCommand
@@ -172,7 +173,7 @@ class TelegramBot:
         if not self._ok(update.effective_user.id):
             await update.message.reply_text(UNAUTHORIZED_MSG)
             return
-        name       = update.effective_user.first_name
+        name       = re.sub(r'([*_`\[\]])', r'\\\1', update.effective_user.first_name or "")
         n          = len(self.pool.model_configs)
         session_id = self._session_id(update)
 
