@@ -90,6 +90,23 @@ if not defined PYTHON (
 if not exist "tools" mkdir "tools"
 if not exist "mcp_servers" mkdir "mcp_servers"
 
+REM ── Auto-install dependencies if missing ─────────────────────
+%PYTHON% -c "import openai, anthropic, telegram" >nul 2>&1
+if errorlevel 1 (
+    echo   正在安装依赖，请稍候...
+    %PYTHON% -m pip install -r "%SCRIPT_DIR%requirements.txt" -q --disable-pip-version-check
+    if errorlevel 1 (
+        color 4c
+        echo   ✗ 依赖安装失败！请手动运行:
+        echo     %PYTHON% -m pip install -r requirements.txt
+        echo.
+        pause
+        exit /b 1
+    )
+    echo   依赖已就绪
+    echo.
+)
+
 echo   启动中...
 echo.
 %PYTHON% "%SCRIPT_DIR%main.py"

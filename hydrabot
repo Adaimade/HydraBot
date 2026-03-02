@@ -61,6 +61,18 @@ start)
 
     mkdir -p "$SCRIPT_DIR/tools" "$SCRIPT_DIR/mcp_servers"
 
+    # Auto-install dependencies if missing
+    if ! "$PYTHON" -c "import openai, anthropic, telegram" &>/dev/null; then
+        printf "  ${Y}正在安装依赖，请稍候...${NC}\n"
+        "$PYTHON" -m pip install -r "$SCRIPT_DIR/requirements.txt" -q --disable-pip-version-check
+        if [[ $? -ne 0 ]]; then
+            printf "${R}❌ 依赖安装失败！请手动运行:${NC}\n"
+            printf "  $PYTHON -m pip install -r requirements.txt\n\n"
+            exit 1
+        fi
+        printf "  ${G}✓ 依赖已就绪${NC}\n\n"
+    fi
+
     printf "  Python:  $($PYTHON --version)\n"
     printf "  目录:    $SCRIPT_DIR\n\n"
 
