@@ -90,17 +90,26 @@ python_ok() {
     [[ "$major" -ge 3 && "$minor" -ge 10 ]]
 }
 
+# ── Helper: run command with sudo if available ──────────────────
+run_cmd() {
+    if command -v sudo &>/dev/null && [[ $EUID -ne 0 ]]; then
+        sudo "$@"
+    else
+        "$@"
+    fi
+}
+
 # ── Install curl if missing ────────────────────────────────────
 if ! command -v curl &>/dev/null; then
     warn "curl 未找到，嘗試安裝..."
     case "$OS" in
         windows) warn "請在 Git Bash 中執行，或手動安裝 curl" ;;
         macos)   brew install curl 2>/dev/null || warn "安裝 curl 失敗，請手動安裝" ;;
-        debian)  sudo apt-get install -y curl -qq ;;
-        fedora)  sudo dnf  install -y curl -q ;;
-        redhat)  sudo yum  install -y curl -q ;;
-        arch)    sudo pacman -S --noconfirm curl ;;
-        alpine)  sudo apk add --quiet curl ;;
+        debian)  run_cmd apt-get install -y curl -qq ;;
+        fedora)  run_cmd dnf  install -y curl -q ;;
+        redhat)  run_cmd yum  install -y curl -q ;;
+        arch)    run_cmd pacman -S --noconfirm curl ;;
+        alpine)  run_cmd apk add --quiet curl ;;
         *)       warn "無法自動安裝 curl，請手動安裝後重試" ;;
     esac
 fi
@@ -165,10 +174,10 @@ if [[ -z "$PYTHON" ]]; then
 
         debian)
             inf "使用 apt 安裝 Python 3.11..."
-            sudo apt-get update -qq
-            sudo apt-get install -y python3.11 python3.11-venv python3-pip python3-venv \
+            run_cmd apt-get update -qq
+            run_cmd apt-get install -y python3.11 python3.11-venv python3-pip python3-venv \
                                     python3-full -qq 2>/dev/null \
-            || sudo apt-get install -y python3 python3-venv python3-pip -qq
+            || run_cmd apt-get install -y python3 python3-venv python3-pip -qq
             for cmd in python3.11 python3 python; do
                 python_ok "$cmd" && { PYTHON="$cmd"; break; }
             done
@@ -176,26 +185,26 @@ if [[ -z "$PYTHON" ]]; then
 
         fedora)
             inf "使用 dnf 安裝 Python..."
-            sudo dnf install -y python3 python3-pip -q
+            run_cmd dnf install -y python3 python3-pip -q
             for cmd in python3 python; do python_ok "$cmd" && { PYTHON="$cmd"; break; }; done
             ;;
 
         redhat)
             inf "使用 yum/dnf 安裝 Python..."
-            sudo dnf install -y python3 python3-pip -q 2>/dev/null \
-            || sudo yum install -y python3 python3-pip -q
+            run_cmd dnf install -y python3 python3-pip -q 2>/dev/null \
+            || run_cmd yum install -y python3 python3-pip -q
             for cmd in python3 python; do python_ok "$cmd" && { PYTHON="$cmd"; break; }; done
             ;;
 
         arch)
             inf "使用 pacman 安裝 Python..."
-            sudo pacman -S --noconfirm python python-pip
+            run_cmd pacman -S --noconfirm python python-pip
             python_ok python && PYTHON=python
             ;;
 
         alpine)
             inf "使用 apk 安裝 Python..."
-            sudo apk add --quiet python3 py3-pip
+            run_cmd apk add --quiet python3 py3-pip
             python_ok python3 && PYTHON=python3
             ;;
 
@@ -215,10 +224,10 @@ ok "Python  $($PYTHON --version)  ($PYTHON)"
 if ! "$PYTHON" -m pip --version &>/dev/null; then
     warn "pip 未找到，嘗試安裝..."
     case "$OS" in
-        debian) sudo apt-get install -y python3-pip -qq ;;
-        fedora|redhat) sudo dnf install -y python3-pip -q 2>/dev/null \
-                     || sudo yum install -y python3-pip -q ;;
-        alpine) sudo apk add --quiet py3-pip ;;
+        debian) run_cmd apt-get install -y python3-pip -qq ;;
+        fedora|redhat) run_cmd dnf install -y python3-pip -q 2>/dev/null \
+                     || run_cmd yum install -y python3-pip -q ;;
+        alpine) run_cmd apk add --quiet py3-pip ;;
         *)  curl -fsSL https://bootstrap.pypa.io/get-pip.py | "$PYTHON" ;;
     esac
 fi
@@ -232,8 +241,8 @@ if ! "$PYTHON" -m venv --help &>/dev/null; then
         debian)
             # debian/ubuntu 需要單獨安裝 python3-venv
             PYVER=$("$PYTHON" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-            sudo apt-get install -y "python${PYVER}-venv" python3-venv -qq 2>/dev/null \
-            || sudo apt-get install -y python3-full -qq
+            run_cmd apt-get install -y "python${PYVER}-venv" python3-venv -qq 2>/dev/null \
+            || run_cmd apt-get install -y python3-full -qq
             ;;
         *)  "$PYTHON" -m pip install virtualenv -q && VENV_CMD="virtualenv" ;;
     esac
