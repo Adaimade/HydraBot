@@ -87,6 +87,12 @@ def load_config() -> dict:
 
 
 def main():
+    # Set working directory to the installation directory (where config.json is)
+    # This ensures relative paths in tools work correctly
+    script_dir = Path(__file__).parent
+    import os
+    os.chdir(script_dir)
+
     # Windows asyncio compatibility
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
