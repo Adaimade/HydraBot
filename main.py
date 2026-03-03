@@ -9,6 +9,28 @@ import asyncio
 from pathlib import Path
 
 
+# ══════════════════════════════════════════════════════════════
+# Check if running in virtual environment
+# ══════════════════════════════════════════════════════════════
+def _check_venv():
+    """Ensure running in virtual environment to access installed dependencies."""
+    in_venv = sys.prefix != sys.base_prefix
+    if not in_venv:
+        try:
+            msg = "\n[ERROR] HydraBot must run in a virtual environment!\n\nYou are using system Python which does not have dependencies installed.\n\nPlease start using one of these methods:\n\n1. (Recommended) Use hydrabot launcher:\n   $ hydrabot start\n"
+            if sys.platform == "win32":
+                msg += "2. Or use venv Python:\n   $ .\\venv\\Scripts\\python.exe main.py\n   or: .\\venv\\Scripts\\Activate.ps1; python main.py\n"
+            else:
+                msg += "2. Or use venv Python:\n   $ ./venv/bin/python main.py\n   or: source venv/bin/activate; python main.py\n"
+            sys.stderr.write(msg)
+        except Exception:
+            pass
+        sys.exit(1)
+
+
+_check_venv()
+
+
 def load_config() -> dict:
     config_path = Path("config.json")
 
