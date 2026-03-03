@@ -22,6 +22,19 @@ activate_venv() {
 }
 
 find_python() {
+    # Prefer venv Python first (like Windows .bat does)
+    if [[ -f "$SCRIPT_DIR/venv/Scripts/python" ]]; then
+        echo "$SCRIPT_DIR/venv/Scripts/python"
+        return
+    elif [[ -f "$SCRIPT_DIR/venv/bin/python" ]]; then
+        echo "$SCRIPT_DIR/venv/bin/python"
+        return
+    elif [[ -f "$SCRIPT_DIR/venv/bin/python3" ]]; then
+        echo "$SCRIPT_DIR/venv/bin/python3"
+        return
+    fi
+
+    # Fall back to system Python
     activate_venv
     for cmd in python3 python; do
         command -v "$cmd" &>/dev/null && { echo "$cmd"; return; }
