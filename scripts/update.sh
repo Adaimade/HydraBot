@@ -52,10 +52,22 @@ read -r _confirm
 [[ "$_confirm" =~ ^[Nn]$ ]] && { printf "  已取消。\n\n"; exit 0; }
 echo ""
 
-# ── Backup config ─────────────────────────────────────────────
+# ── Backup user data ──────────────────────────────────────────
+printf "\n  💾 备份用户数据...\n"
+
 if [[ -f "config.json" ]]; then
     cp config.json "config.json.bak"
-    ok "已备份 config.json → config.json.bak"
+    ok "已备份 config.json"
+fi
+
+if [[ -d "tools" ]] && [[ $(ls -A tools 2>/dev/null) ]]; then
+    tar czf tools.tar.gz tools/ 2>/dev/null || true
+    ok "已备份自定义 tools"
+fi
+
+if [[ -f "memory.json" ]]; then
+    cp memory.json "memory.json.bak"
+    ok "已备份 memory.json"
 fi
 
 # ── Count existing tools (before update) ─────────────────────
@@ -81,6 +93,25 @@ for f in "${CORE_FILES[@]}"; do
 done
 
 chmod +x scripts/update.sh hydrabot 2>/dev/null || true
+
+# ── Restore user data ──────────────────────────────────────────
+printf "\n  📥 恢复用户数据...\n"
+
+if [[ -f "config.json.bak" ]]; then
+    cp config.json.bak config.json
+    ok "已恢复 config.json（保留您的设定）"
+fi
+
+if [[ -f "tools.tar.gz" ]]; then
+    tar xzf tools.tar.gz 2>/dev/null || true
+    rm -f tools.tar.gz
+    ok "已恢复自定义 tools"
+fi
+
+if [[ -f "memory.json.bak" ]]; then
+    cp memory.json.bak memory.json
+    ok "已恢复 memory.json（保留对话历史）"
+fi
 
 # ── Update dependencies ───────────────────────────────────────
 printf "\n  📦 更新 Python 依赖...\n"

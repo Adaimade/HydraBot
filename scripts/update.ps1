@@ -65,10 +65,27 @@ if ($confirm -match "^[Nn]$") {
 }
 Write-Host ""
 
-# ── Backup config ──────────────────────────────────────────────
+# ── Backup user data ───────────────────────────────────────────
+Write-Host ""
+Cyan "💾 備份用戶數據..."
+Write-Host ""
+
 if (Test-Path "config.json") {
-    Copy-Item "config.json" "config.json.bak"
-    Ok "已備份 config.json → config.json.bak"
+    Copy-Item "config.json" "config.json.bak" -Force
+    Ok "已備份 config.json"
+}
+
+if (Test-Path "tools" -PathType Container) {
+    $toolsFiles = @(Get-ChildItem "tools" -Recurse -File 2>$null | Measure-Object).Count
+    if ($toolsFiles -gt 0) {
+        Compress-Archive -Path "tools" -DestinationPath "tools.zip" -Force -CompressionLevel Fastest
+        Ok "已備份自定義 tools"
+    }
+}
+
+if (Test-Path "memory.json") {
+    Copy-Item "memory.json" "memory.json.bak" -Force
+    Ok "已備份 memory.json"
 }
 
 # ── Count existing tools (before update) ───────────────────────
@@ -101,8 +118,30 @@ foreach ($f in $CORE_FILES) {
     }
 }
 
+# ── Restore user data ──────────────────────────────────────────
+Write-Host ""
+Cyan "📥 復原用戶數據..."
+Write-Host ""
+
+if (Test-Path "config.json.bak") {
+    Copy-Item "config.json.bak" "config.json" -Force
+    Ok "已復原 config.json（保留您的設定）"
+}
+
+if (Test-Path "tools.zip") {
+    Expand-Archive -Path "tools.zip" -DestinationPath "." -Force
+    Remove-Item "tools.zip" -Force
+    Ok "已復原自定義 tools"
+}
+
+if (Test-Path "memory.json.bak") {
+    Copy-Item "memory.json.bak" "memory.json" -Force
+    Ok "已復原 memory.json（保留對話歷史）"
+}
+
 # ── Update dependencies ────────────────────────────────────────
-Write-Host "`n  📦 更新 Python 依賴...`n" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "  📦 更新 Python 依賴...`n" -ForegroundColor Cyan
 
 $PYTHON = $null
 foreach ($cmd in @("python", "python3")) {
