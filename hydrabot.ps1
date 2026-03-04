@@ -83,6 +83,23 @@ switch ($Command.ToLower()) {
         Write-Host ""
     }
 
+    "update" {
+        if (Test-Path "scripts\update.ps1") {
+            & "scripts\update.ps1" $Arg
+        } else {
+            Err "scripts\update.ps1 not found"
+        }
+    }
+
+    "logs" {
+        $lines = if ($Arg -and $Arg -match "^\d+$") { [int]$Arg } else { 50 }
+        if (Test-Path "hydrabot.log") {
+            Get-Content "hydrabot.log" -Tail $lines
+        } else {
+            Write-Host "  [INFO] No logs found. Run 'hydrabot start' first" -ForegroundColor Cyan
+        }
+    }
+
     default {
         Write-Host ""
         Write-Host "  🐍 HydraBot CLI  v$VER" -ForegroundColor Cyan
@@ -91,8 +108,10 @@ switch ($Command.ToLower()) {
         Write-Host "  用法:" -ForegroundColor White
         Write-Host ""
         Write-Host "  .\hydrabot.ps1 start       啟動 Bot" -ForegroundColor Cyan
+        Write-Host "  .\hydrabot.ps1 update      更新到最新版本（保留設定）" -ForegroundColor Cyan
         Write-Host "  .\hydrabot.ps1 config      編輯 config.json" -ForegroundColor Cyan
         Write-Host "  .\hydrabot.ps1 status      查看狀態" -ForegroundColor Cyan
+        Write-Host "  .\hydrabot.ps1 logs [N]    顯示最近 N 行日誌（預設 50）" -ForegroundColor Cyan
         Write-Host "  .\hydrabot.ps1 help        顯示此說明" -ForegroundColor Cyan
         Write-Host ""
         Write-Host "  安裝目錄: $SCRIPT_DIR" -ForegroundColor DarkGray
