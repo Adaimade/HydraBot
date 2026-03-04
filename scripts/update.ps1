@@ -99,7 +99,7 @@ $OLD_TOOLS = if (Test-Path "tools_builtin.py") {
 Write-Host "  📥 下載更新..."
 Hr
 
-$CORE_FILES = @("agent.py","bot.py","main.py","tools_builtin.py","requirements.txt","scripts/update.ps1","hydrabot.bat","VERSION")
+$CORE_FILES = @("agent.py","bot.py","main.py","tools_builtin.py","requirements.txt","scripts/update.ps1","hydrabot.cmd","VERSION")
 $FAILED = @()
 
 New-Item -ItemType Directory -Force -Path "scripts" | Out-Null
@@ -141,7 +141,8 @@ if (Test-Path "memory.json.bak") {
 
 # ── Update dependencies ────────────────────────────────────────
 Write-Host ""
-Write-Host "  📦 更新 Python 依賴...`n" -ForegroundColor Cyan
+Write-Host "  📦 更新 Python 依賴..." -ForegroundColor Cyan
+Write-Host ""
 
 $PYTHON = $null
 foreach ($cmd in @("python", "python3")) {
