@@ -41,7 +41,7 @@ The installer will automatically:
 2. Clone / download core files
 3. Create a Python virtual environment and install dependencies
 4. Interactively prompt for your Telegram Token and AI API Key
-5. Create the global `hydrabot` command
+5. Set up the global `hydrabot` command (works from anywhere)
 
 ### Windows (PowerShell)
 
@@ -51,8 +51,10 @@ irm https://raw.githubusercontent.com/Adaimade/HydraBot/main/install.ps1 | iex
 
 ### Manual Install
 
+For manual installation, you'll need to add the installation directory to PATH or run commands from that directory.
+
+**Linux / macOS:**
 ```bash
-# Linux / macOS
 git clone https://github.com/Adaimade/HydraBot.git
 cd HydraBot
 python3 -m venv venv && source venv/bin/activate
@@ -62,8 +64,8 @@ cp config.example.json config.json
 ./hydrabot start
 ```
 
+**Windows (PowerShell):**
 ```powershell
-# Windows (PowerShell)
 git clone https://github.com/Adaimade/HydraBot.git
 cd HydraBot
 python -m venv venv
@@ -71,12 +73,16 @@ venv\Scripts\activate
 pip install -r requirements.txt
 copy config.example.json config.json
 # Edit config.json to fill in credentials
-hydrabot.bat start
+.\hydrabot.cmd start
 ```
+
+> ℹ️ **PATH Setup**: After manual installation, either add the installation directory to your system PATH (so `hydrabot` works from anywhere), or always run commands from the installation directory. See [QUICKSTART.md](QUICKSTART.md) for detailed PATH setup instructions.
 
 ---
 
 ## Start & Manage
+
+After installation, you can manage HydraBot using the `hydrabot` command. This works globally if you used the automatic installer, or from the installation directory for manual installs:
 
 ```bash
 hydrabot start          # Start the bot
@@ -87,6 +93,8 @@ hydrabot status         # View install status and config summary
 hydrabot logs [N]       # View last N lines of logs (default 50)
 hydrabot help           # Show full help
 ```
+
+> ℹ️ **Not working globally?** If using manual install, either navigate to the installation directory or add it to PATH. See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.
 
 ---
 

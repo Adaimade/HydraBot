@@ -578,6 +578,8 @@ if [[ -n "$PROFILE" ]]; then
         echo "export PATH=\"$WRAPPER_DIR:\$PATH\"" >> "$PROFILE"
         ok "已寫入 PATH → $PROFILE"
     fi
+    # Load PATH in current shell for immediate availability
+    export PATH="$WRAPPER_DIR:$PATH"
 fi
 
 echo ""
@@ -593,16 +595,22 @@ cat << 'DONE'
 DONE
 printf "${NC}\n"
 
-printf "${BOLD}  快速開始 / Quick Start${NC}\n"
+printf "${BOLD}  🎯 快速開始 / Quick Start${NC}\n"
 hr
-printf "  ${C}hydrabot start${NC}          啟動 Bot\n"
-printf "  ${C}hydrabot update${NC}         更新到最新版本\n"
-printf "  ${C}hydrabot config${NC}         編輯設定\n"
-printf "  ${C}hydrabot status${NC}         查看狀態\n"
-printf "  ${C}hydrabot help${NC}           完整說明\n"
+printf "\n  ✅ ${G}hydrabot 指令已就緒${NC}\n\n"
+printf "  您可以從任何地方執行:\n"
+printf "    ${C}hydrabot start${NC}          啟動 Bot\n"
+printf "    ${C}hydrabot update${NC}         更新到最新版本\n"
+printf "    ${C}hydrabot config${NC}         編輯設定\n"
+printf "    ${C}hydrabot status${NC}         查看狀態\n"
+printf "    ${C}hydrabot logs${NC}           查看日誌\n"
+printf "    ${C}hydrabot help${NC}           完整說明\n"
 printf "\n"
-printf "  安裝目錄: ${DIM}$INSTALL_DIR${NC}\n"
-printf "  去 Telegram 找到你的 Bot，發送 ${B}/start${NC} 開始！\n"
+printf "  ✨ 現在就可以使用 hydrabot 命令！（已添加到 PATH）\n"
 printf "\n"
-printf "  ${Y}若 hydrabot 指令未生效，請執行:${NC}\n"
-printf "  ${DIM}source ~/.bashrc  (或重啟終端機)${NC}\n\n"
+printf "  📂 安裝目錄: ${DIM}$INSTALL_DIR${NC}\n"
+printf "  📖 完整說明: ${DIM}$INSTALL_DIR/QUICKSTART.md${NC}\n"
+printf "\n"
+printf "  💡 提示：PATH 已添加到 ${DIM}$PROFILE${NC}，重啟終端後在其他 shell 中也可使用\n"
+printf "\n"
+printf "  🎉 去 Telegram 找到你的 Bot，發送 ${B}/start${NC} 開始！\n\n"
