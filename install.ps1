@@ -287,11 +287,9 @@ Write-Host ""
 Write-Host "  [6/6] 設定啟動腳本" -ForegroundColor White
 Hr
 
-# hydrabot launcher (prefer .cmd for better compatibility)
+# hydrabot launcher
 if (Test-Path "$INSTALL_DIR\hydrabot.cmd") {
     Ok "hydrabot.cmd 已就緒"
-} elseif (Test-Path "$INSTALL_DIR\hydrabot.bat") {
-    Ok "hydrabot.bat 已就緒"
 } else {
     Warn "hydrabot launcher 未找到，請手動檢查下載"
 }

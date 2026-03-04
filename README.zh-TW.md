@@ -41,7 +41,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Adaimade/HydraBot/main/insta
 2. 克隆/下載核心檔案
 3. 建立 Python 虛擬環境並安裝依賴
 4. 互動式填寫 Telegram Token、AI API Key
-5. 建立全域 `hydrabot` 指令
+5. 設定全域 `hydrabot` 指令（可從任何地方使用）
 
 ### Windows (PowerShell)
 
@@ -51,8 +51,10 @@ irm https://raw.githubusercontent.com/Adaimade/HydraBot/main/install.ps1 | iex
 
 ### 手動安裝
 
+對於手動安裝，您需要將安裝目錄添加到 PATH，或者從安裝目錄中執行命令。
+
+**Linux / macOS：**
 ```bash
-# Linux / macOS
 git clone https://github.com/Adaimade/HydraBot.git
 cd HydraBot
 python3 -m venv venv && source venv/bin/activate
@@ -62,8 +64,8 @@ cp config.example.json config.json
 ./hydrabot start
 ```
 
+**Windows (PowerShell)：**
 ```powershell
-# Windows (PowerShell)
 git clone https://github.com/Adaimade/HydraBot.git
 cd HydraBot
 python -m venv venv
@@ -71,12 +73,16 @@ venv\Scripts\activate
 pip install -r requirements.txt
 copy config.example.json config.json
 # 編輯 config.json 填入憑證
-hydrabot.bat start
+.\hydrabot.cmd start
 ```
+
+> ℹ️ **PATH 設置**：手動安裝後，請將安裝目錄添加到系統 PATH（這樣 `hydrabot` 可以從任何地方使用），或者一律從安裝目錄中執行命令。詳見 [QUICKSTART.md](QUICKSTART.md) 的 PATH 設置說明。
 
 ---
 
 ## 啟動與管理
+
+安裝完成後，您可以使用 `hydrabot` 指令管理 HydraBot。此指令在自動安裝器中可全域使用，手動安裝則需從安裝目錄執行或添加到 PATH：
 
 ```bash
 hydrabot start          # 啟動 Bot
@@ -87,6 +93,8 @@ hydrabot status         # 查看安裝狀態與配置摘要
 hydrabot logs [N]       # 查看最近 N 行日誌（預設 50）
 hydrabot help           # 顯示完整幫助
 ```
+
+> ℹ️ **指令無法執行？** 如使用手動安裝，請進入安裝目錄後執行，或將安裝目錄添加到 PATH。詳見 [QUICKSTART.md](QUICKSTART.md) 的說明。
 
 ---
 
