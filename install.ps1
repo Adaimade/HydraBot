@@ -315,16 +315,35 @@ Hr
 Write-Host ""
 Write-Host "  ✅  HydraBot 安裝完成！" -ForegroundColor Green
 Write-Host ""
-Write-Host "  啟動 Bot：" -ForegroundColor White
-Write-Host "    hydrabot start" -ForegroundColor Cyan
+Write-Host "  🎯 快速開始（選擇適合您的方式）：" -ForegroundColor White
 Write-Host ""
-Write-Host "  或直接執行：" -ForegroundColor White
+
+# 檢查 PATH 是否設置成功
+if ($env:Path -like "*$INSTALL_DIR*") {
+    Write-Host "  ✅ PATH 已設置 - 您可以從任何地方執行：" -ForegroundColor Green
+    Write-Host "    hydrabot start      # 啟動 Bot" -ForegroundColor Cyan
+    Write-Host "    hydrabot update     # 更新版本" -ForegroundColor Cyan
+    Write-Host "    hydrabot config     # 編輯設定" -ForegroundColor Cyan
+    Write-Host "    hydrabot status     # 查看狀態" -ForegroundColor Cyan
+    Write-Host "    hydrabot logs       # 查看日誌" -ForegroundColor Cyan
+    Write-Host "    hydrabot help       # 顯示幫助" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "  💡 提示：您需要重啟 PowerShell 以生效新的 PATH 設置" -ForegroundColor Yellow
+} else {
+    Write-Host "  ⚠️  PATH 未設置 - 請使用以下方式執行：" -ForegroundColor Yellow
+}
+
+Write-Host ""
+Write-Host "  📂 在安裝目錄中執行：" -ForegroundColor White
+Write-Host "    cd $INSTALL_DIR" -ForegroundColor Cyan
+Write-Host "    .\hydrabot.cmd start        # 啟動 Bot" -ForegroundColor Cyan
+Write-Host "    .\hydrabot.cmd update       # 更新版本" -ForegroundColor Cyan
+Write-Host ""
+
+Write-Host "  🐍 或直接用 Python：" -ForegroundColor White
 Write-Host "    cd $INSTALL_DIR" -ForegroundColor Cyan
 Write-Host "    $PY main.py" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  更新指令：" -ForegroundColor White
-Write-Host "    hydrabot update" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "  查看說明：" -ForegroundColor White
-Write-Host "    hydrabot help" -ForegroundColor Cyan
+
+Write-Host "  📖 完整說明：請查看 $INSTALL_DIR\QUICKSTART.md" -ForegroundColor Cyan
 Write-Host ""
