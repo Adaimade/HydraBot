@@ -53,6 +53,24 @@ if "!CMD!"=="start" (
     if defined PYTHON (
         "%PYTHON%" -c "import json; c=json.load(open('config.json')); print(f'Models: {len(c.get(\"models\",[]))}'); print(f'Auth: {c.get(\"authorized_users\",[])}'); print(f'Token: {c.get(\"telegram_token\",\"?\")[:6]}...')" 2>nul
     )
+) else if "!CMD!"=="update" (
+    REM Delegate to PowerShell update script for better encoding handling
+    if exist "scripts\update.ps1" (
+        powershell -ExecutionPolicy Bypass -File "scripts\update.ps1" %2
+        exit /b !ERRORLEVEL!
+    ) else (
+        echo [ERROR] scripts\update.ps1 not found
+        exit /b 1
+    )
+) else if "!CMD!"=="logs" (
+    REM Show logs from hydrabot.log file
+    set "LINES=%2"
+    if "!LINES!"=="" set "LINES=50"
+    if exist "hydrabot.log" (
+        powershell -Command "Get-Content 'hydrabot.log' -Tail !LINES!"
+    ) else (
+        echo [INFO] No logs found. Run 'hydrabot start' first or check hydrabot.log
+    )
 ) else (
     echo.
     echo   HydraBot CLI (Windows)
@@ -60,8 +78,11 @@ if "!CMD!"=="start" (
     echo.
     echo   Usage:
     echo     hydrabot start       - Start Bot
+    echo     hydrabot update      - Update to latest version (preserves config)
     echo     hydrabot config      - Edit config.json
-    echo     hydrabot status      - Show status
+    echo     hydrabot status      - Show installation status and config
+    echo     hydrabot logs [N]    - Show last N lines of logs (default: 50)
+    echo     hydrabot help        - Show this help
     echo.
 )
 
