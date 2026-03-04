@@ -53,6 +53,15 @@ if "!CMD!"=="start" (
     if defined PYTHON (
         "%PYTHON%" -c "import json; c=json.load(open('config.json')); print(f'Models: {len(c.get(\"models\",[]))}'); print(f'Auth: {c.get(\"authorized_users\",[])}'); print(f'Token: {c.get(\"telegram_token\",\"?\")[:6]}...')" 2>nul
     )
+) else if "!CMD!"=="update" (
+    REM Delegate to PowerShell update script for better encoding handling
+    if exist "scripts\update.ps1" (
+        powershell -ExecutionPolicy Bypass -File "scripts\update.ps1" %2
+        exit /b !ERRORLEVEL!
+    ) else (
+        echo [ERROR] scripts\update.ps1 not found
+        exit /b 1
+    )
 ) else (
     echo.
     echo   HydraBot CLI (Windows)
@@ -60,8 +69,10 @@ if "!CMD!"=="start" (
     echo.
     echo   Usage:
     echo     hydrabot start       - Start Bot
+    echo     hydrabot update      - Update to latest version
     echo     hydrabot config      - Edit config.json
     echo     hydrabot status      - Show status
+    echo     hydrabot help        - Show this help
     echo.
 )
 
