@@ -307,6 +307,9 @@ if ($userPath -notlike "*$INSTALL_DIR*") {
     Ok "PATH 已包含安裝目錄"
 }
 
+# Reload PATH in current session so hydrabot command works immediately
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
 # ── Done ───────────────────────────────────────────────────────
 Write-Host ""
 Hr
@@ -326,7 +329,7 @@ if ($env:Path -like "*$INSTALL_DIR*") {
     Write-Host "    hydrabot logs       # 查看日誌" -ForegroundColor Cyan
     Write-Host "    hydrabot help       # 顯示幫助" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "  💡 提示：您需要重啟 PowerShell 以生效新的 PATH 設置" -ForegroundColor Yellow
+    Write-Host "  ✨ 現在就可以使用 hydrabot 命令！（無需重啟 PowerShell）" -ForegroundColor Green
 } else {
     Write-Host "  ⚠️  PATH 未設置 - 請使用以下方式執行：" -ForegroundColor Yellow
 }
