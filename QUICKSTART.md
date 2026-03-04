@@ -37,16 +37,28 @@ cp config.example.json config.json
 
 ## 🎯 啟動 HydraBot
 
-### 如果已設置 PATH（安裝腳本會自動設置）
+### ✅ 最推薦：從任何地方執行
+
+安裝腳本會自動添加 HydraBot 到 PATH，所以您可以**從任何目錄**執行：
 
 ```bash
-# 任何地方都可以執行
-hydrabot start
-hydrabot config
-hydrabot status
+# 任何地方都可以執行，腳本會自動找到安裝目錄
+hydrabot start      # 啟動 Bot
+hydrabot update     # 更新到最新版本（保留您的 config）
+hydrabot config     # 編輯設定
+hydrabot status     # 查看狀態
+hydrabot help       # 顯示幫助
 ```
 
-### 如果未設置 PATH（手動安裝）
+**工作原理：**
+- 啟動器會自動偵測自己的位置
+- 自動切換到安裝目錄
+- 查找虛擬環境中的 Python
+- 執行命令
+
+### 備選方案：在安裝目錄中執行
+
+如果 PATH 設置有問題，您也可以進入安裝目錄後執行：
 
 **Windows：**
 ```powershell
@@ -126,12 +138,46 @@ hydrabot status
 
 ## 📝 常見命令
 
-| 命令 | 說明 |
-|------|------|
-| `hydrabot start` | 啟動 HydraBot Bot |
-| `hydrabot config` | 編輯設定文件 |
-| `hydrabot status` | 查看安裝狀態 |
-| `hydrabot help` | 顯示幫助 |
+| 命令 | 說明 | 使用位置 |
+|------|------|---------|
+| `hydrabot start` | 啟動 HydraBot Bot | 任何地方 |
+| `hydrabot update` | 更新代碼（自動保留設定） | 任何地方 |
+| `hydrabot update --force` | 強制更新（即使版本相同） | 任何地方 |
+| `hydrabot config` | 編輯設定文件 | 任何地方 |
+| `hydrabot status` | 查看安裝狀態與設定 | 任何地方 |
+| `hydrabot logs [N]` | 查看最近 N 行日誌 | 任何地方 |
+| `hydrabot help` | 顯示幫助 | 任何地方 |
+
+---
+
+## 🔄 更新 HydraBot
+
+### 自動保留您的設定
+
+更新時會自動備份和恢復：
+- ✅ `config.json` - 您的 API 金鑰和設定
+- ✅ `tools/` 目錄 - 自定義工具
+- ✅ `memory.json` - 對話歷史
+
+```bash
+# 簡單更新（推薦）
+hydrabot update
+
+# 強制更新（即使版本相同）
+hydrabot update --force
+```
+
+**更新過程：**
+1. 檢查新版本
+2. 備份用戶數據
+3. 下載核心文件
+4. 恢復備份的設定
+5. 更新 Python 依賴
+
+**注意：** 更新後需要重啟 Bot 以應用更改
+```bash
+hydrabot start
+```
 
 ---
 
