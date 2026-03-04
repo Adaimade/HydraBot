@@ -578,6 +578,8 @@ if [[ -n "$PROFILE" ]]; then
         echo "export PATH=\"$WRAPPER_DIR:\$PATH\"" >> "$PROFILE"
         ok "已寫入 PATH → $PROFILE"
     fi
+    # Load PATH in current shell for immediate availability
+    export PATH="$WRAPPER_DIR:$PATH"
 fi
 
 echo ""
@@ -604,11 +606,11 @@ printf "    ${C}hydrabot status${NC}         查看狀態\n"
 printf "    ${C}hydrabot logs${NC}           查看日誌\n"
 printf "    ${C}hydrabot help${NC}           完整說明\n"
 printf "\n"
+printf "  ✨ 現在就可以使用 hydrabot 命令！（已添加到 PATH）\n"
+printf "\n"
 printf "  📂 安裝目錄: ${DIM}$INSTALL_DIR${NC}\n"
 printf "  📖 完整說明: ${DIM}$INSTALL_DIR/QUICKSTART.md${NC}\n"
 printf "\n"
-printf "  ${Y}⚠️  若 hydrabot 指令未生效${NC}:\n"
-printf "    執行: ${DIM}source ~/.bashrc${NC}\n"
-printf "    或重啟終端機\n"
+printf "  💡 提示：PATH 已添加到 ${DIM}$PROFILE${NC}，重啟終端後在其他 shell 中也可使用\n"
 printf "\n"
 printf "  🎉 去 Telegram 找到你的 Bot，發送 ${B}/start${NC} 開始！\n\n"

@@ -96,7 +96,9 @@ if ($userPath -notlike "*$HydraPath*") {
         "$userPath;$HydraPath",
         "User"
     )
-    Write-Host "PATH 已更新。請重啟 PowerShell 使其生效"
+    # 立即在當前 PowerShell 加載新 PATH
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+    Write-Host "✅ PATH 已更新。您現在可以立即使用 hydrabot 命令"
 }
 ```
 
@@ -115,9 +117,18 @@ export PATH="$HOME/.local/bin:$PATH"
 export PATH="/path/to/hydrabot:$PATH"
 ```
 
-然後執行：
+然後立即加載（現在就可以使用 hydrabot）：
 ```bash
 source ~/.bashrc  # 或 source ~/.zshrc
+```
+
+如果 hydrabot 命令無法找到，請確認您的 shell：
+```bash
+# 如果使用 zsh（macOS 預設）
+source ~/.zshrc
+
+# 如果使用 bash
+source ~/.bashrc
 ```
 
 ---
