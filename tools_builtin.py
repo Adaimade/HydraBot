@@ -418,8 +418,8 @@ def get_builtin_tools(agent: "Agent") -> list:
     # ─────────────────────────────────────────────────────────────
 
     def remember(key: str, value: str = None, action: str = "set") -> str:
-        """Persistent key-value memory stored in memory.json."""
-        mem_file = Path("memory.json")
+        """Persistent key-value memory (per AgentPool；Telegram: memory.json，Discord: discord_memory.json)。"""
+        mem_file = getattr(agent, "_memory_path", None) or Path("memory.json")
         try:
             memory = json.loads(mem_file.read_text(encoding="utf-8")) if mem_file.exists() else {}
         except Exception:

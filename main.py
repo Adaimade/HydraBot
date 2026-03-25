@@ -31,12 +31,23 @@ def _check_venv():
 _check_venv()
 
 
+def _telegram_configured(config: dict) -> bool:
+    t = (config.get("telegram_token") or "").strip()
+    return bool(t) and t not in ("YOUR_TELEGRAM_BOT_TOKEN",)
+
+
+def _discord_configured(config: dict) -> bool:
+    t = (config.get("discord_token") or "").strip()
+    return bool(t) and "YOUR_DISCORD_BOT_TOKEN" not in t
+
+
 def load_config() -> dict:
     config_path = Path("config.json")
 
     if not config_path.exists():
         template = {
             "telegram_token": "YOUR_TELEGRAM_BOT_TOKEN",
+            "discord_token": "",
             "model_api_key": "YOUR_MODEL_API_KEY",
             "model_provider": "anthropic",
             "model_name": "claude-sonnet-4-6",
@@ -56,9 +67,8 @@ def load_config() -> dict:
 
     errors = []
 
-    # Check Telegram token
-    if config.get("telegram_token") in ("", "YOUR_TELEGRAM_BOT_TOKEN", None):
-        errors.append("telegram_token 未設定")
+    if not _telegram_configured(config) and not _discord_configured(config):
+        errors.append("請至少設定有效的 telegram_token 或 discord_token（至少一項）")
 
     # Check model config — support both new (models array) and old (model_api_key) format
     models = config.get("models", [])
@@ -97,13 +107,40 @@ def main():
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-    print("🐍 HydraBot 啟動中...")
-
     config = load_config()
+    tg = _telegram_configured(config)
+    dc = _discord_configured(config)
+
+    if dc and not tg:
+        try:
+            import discord  # noqa: F401
+        except ImportError:
+            print("❌ 已設定 discord_token 但未安裝 discord.py")
+            print("   請執行: pip install -r requirements.txt")
+            sys.exit(1)
+        print("🐍 HydraBot 啟動中（僅 Discord）...")
+        from discord_bot import HydraDiscordClient
+
+        HydraDiscordClient(config).run((config.get("discord_token") or "").strip())
+        return
+
+    if dc and tg:
+        try:
+            import discord  # noqa: F401
+        except ImportError:
+            print("❌ 已設定 discord_token 但未安裝 discord.py")
+            print("   請執行: pip install -r requirements.txt")
+            sys.exit(1)
+        from discord_bot import run_discord_bot_thread
+
+        print("🐍 HydraBot 啟動中（Telegram + Discord）...")
+        run_discord_bot_thread(config)
+    else:
+        print("🐍 HydraBot 啟動中...")
 
     from bot import TelegramBot
-    bot = TelegramBot(config)
-    bot.run()
+
+    TelegramBot(config).run()
 
 
 if __name__ == "__main__":

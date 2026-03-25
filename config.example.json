@@ -2,6 +2,14 @@
   "_註解": "複製此檔案為 config.json 並填入你的憑證",
 
   "telegram_token": "YOUR_TELEGRAM_BOT_TOKEN",
+  "_註解_Discord": "可與 Telegram 並用；至少一個平台 token 有效即可。需 pip 安裝 discord.py，並在 Developer Portal 開啟 Message Content Intent。",
+  "discord_token": "",
+  "discord_authorized_users": [],
+  "discord_channel_ids": [],
+  "discord_guild_ids": [],
+  "discord_allow_dm": true,
+  "discord_data_prefix": "discord_",
+
   "authorized_users": [],
 
   "max_tokens": 4096,

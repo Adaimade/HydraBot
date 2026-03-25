@@ -167,9 +167,12 @@ class NotificationScheduler:
     使用方式：
       scheduler = NotificationScheduler()       # 在 AgentPool 裡建立
       scheduler.start(loop, send_func)          # 在 bot._post_init 裡啟動
+
+    schedules_file — 可指定路徑（例如 Discord 專用 discord_schedules.json）
     """
 
-    def __init__(self):
+    def __init__(self, schedules_file: Optional[Union[str, Path]] = None):
+        self._schedules_file = Path(schedules_file) if schedules_file else SCHEDULES_FILE
         self._jobs: dict[str, ScheduledJob] = {}
         self._lock        = threading.Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -188,7 +191,9 @@ class NotificationScheduler:
         self._send_func = send_func
         self._stop_event.clear()
         self._thread = threading.Thread(
-            target=self._run_loop, daemon=True, name="hydra_scheduler"
+            target=self._run_loop,
+            daemon=True,
+            name=f"hydra_sched_{id(self) & 0xFFFF:x}",
         )
         self._thread.start()
         active = sum(1 for j in self._jobs.values() if j.active)
@@ -258,7 +263,7 @@ class NotificationScheduler:
         try:
             with self._lock:
                 data = [j.to_dict() for j in self._jobs.values()]
-            SCHEDULES_FILE.write_text(
+            self._schedules_file.write_text(
                 json.dumps(data, indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
@@ -266,10 +271,10 @@ class NotificationScheduler:
             logger.warning(f"Failed to save schedules: {e}")
 
     def _load_jobs(self):
-        if not SCHEDULES_FILE.exists():
+        if not self._schedules_file.exists():
             return
         try:
-            data = json.loads(SCHEDULES_FILE.read_text(encoding="utf-8"))
+            data = json.loads(self._schedules_file.read_text(encoding="utf-8"))
             for d in data:
                 job = ScheduledJob.from_dict(d)
                 # 過期的一次性 inactive job 不需要再載入

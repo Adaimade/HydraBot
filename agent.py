@@ -89,8 +89,18 @@ class AgentPool:
     Drop-in replacement for the old Agent class.
     """
 
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, *, data_prefix: str = ""):
+        """
+        data_prefix — 非空時使用獨立資料檔（例如 Discord：\"discord_\" → discord_memory.json）。
+        Telegram 預設為 \"\"（memory.json、schedules.json、timezones.json）。
+        """
         self.config = config
+        self._data_prefix = data_prefix or ""
+        self._memory_path = (
+            Path(f"{self._data_prefix}memory.json")
+            if self._data_prefix
+            else Path("memory.json")
+        )
         self.max_tokens = config.get("max_tokens", 4096)
         self.max_history = config.get("max_history", 50)
 
@@ -129,13 +139,22 @@ class AgentPool:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._send_func = None   # async (session_id: tuple, text: str) -> None
 
-        # Notification scheduler (started by bot._post_init)
-        self.scheduler = NotificationScheduler()
+        # Notification scheduler (started by bot / Discord on_ready)
+        _sched_name = (
+            f"{self._data_prefix}schedules.json"
+            if self._data_prefix
+            else "schedules.json"
+        )
+        self.scheduler = NotificationScheduler(schedules_file=Path(_sched_name))
 
         # User timezone offsets  { session_id -> UTC offset hours (int) }
         # e.g. UTC+8 → 8,  UTC-5 → -5
         self.user_timezones: dict[tuple, int] = {}
-        self._tz_file = Path("timezones.json")
+        self._tz_file = (
+            Path(f"{self._data_prefix}timezones.json")
+            if self._data_prefix
+            else Path("timezones.json")
+        )
         self._load_timezones()
 
         # Load tools
