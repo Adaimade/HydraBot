@@ -146,32 +146,36 @@ Write-Host ""
 
 $PYTHON = $null
 foreach ($cmd in @("python", "python3")) {
-    try {
-        if (Get-Command $cmd -ErrorAction SilentlyContinue) {
-            $PYTHON = $cmd
-            break
-        }
-    } catch {}
+    if (Get-Command $cmd -ErrorAction SilentlyContinue) {
+        $PYTHON = $cmd
+        break
+    }
 }
 
-if ($PYTHON) {
-    # Activate venv if exists
-    $VENV_ACTIVATE = if (Test-Path "venv\Scripts\activate.ps1") {
-        "venv\Scripts\activate.ps1"
-    } elseif (Test-Path "venv\bin\activate") {
-        "venv\bin\activate"
-    } else {
-        $null
+if (-not $PYTHON) {
+    Warn "找不到 Python，略過依賴更新"
+}
+else {
+    # Activate venv if exists (Windows: Scripts\activate.ps1)
+    $VENV_ACTIVATE = $null
+    if (Test-Path "venv\Scripts\activate.ps1") {
+        $VENV_ACTIVATE = "venv\Scripts\activate.ps1"
+    }
+    elseif (Test-Path "venv\bin\activate") {
+        $VENV_ACTIVATE = "venv\bin\activate"
     }
 
-    if ($VENV_ACTIVATE) {
+    if ($null -ne $VENV_ACTIVATE) {
         & $VENV_ACTIVATE
     }
 
-    & $PYTHON -m pip install -r requirements.txt -q --upgrade --disable-pip-version-check
-    Ok "依賴已更新"
-} else {
-    Warn "找不到 Python，略過依賴更新"
+    try {
+        & $PYTHON -m pip install -r requirements.txt -q --upgrade --disable-pip-version-check
+        Ok "依賴已更新"
+    }
+    catch {
+        Warn "pip 更新失敗，請手動執行: $PYTHON -m pip install -r requirements.txt"
+    }
 }
 
 # ── Show new tools ────────────────────────────────────────────
