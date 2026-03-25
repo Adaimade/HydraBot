@@ -671,13 +671,21 @@ class AgentPool:
             choice = resp.choices[0]
             msg = choice.message
 
-            if choice.finish_reason == "tool_calls" and msg.tool_calls:
+            # Gemini 等 OpenAI 相容 API 常在有函式呼叫時仍回傳 finish_reason="stop"，
+            # 若只檢查 finish_reason=="tool_calls" 會永遠不執行工具（排程、Shell 等全部失效）。
+            if msg.tool_calls:
                 messages.append(msg)
                 for tc in msg.tool_calls:
-                    args = json.loads(tc.function.arguments)
-                    print(f"  🔧 {tc.function.name}({str(args)[:100]})")
-                    result = self._call_tool(tc.function.name, args, tools_dict)
-                    print(f"     → {str(result)[:100]}")
+                    raw_args = tc.function.arguments or "{}"
+                    try:
+                        args = json.loads(raw_args)
+                    except json.JSONDecodeError:
+                        result = f"❌ 無法解析工具參數（JSON）: {raw_args[:300]}"
+                        args = {}
+                    else:
+                        print(f"  🔧 {tc.function.name}({str(args)[:100]})")
+                        result = self._call_tool(tc.function.name, args, tools_dict)
+                        print(f"     → {str(result)[:100]}")
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
@@ -764,11 +772,13 @@ class AgentPool:
 - 子代理內不要再次呼叫 spawn_agent（防止遞迴）
 - 子代理可使用 report_progress 在執行途中推送進度更新
 
-## 定時通知使用策略
-- 用戶要求「提醒我...」「XX 時間通知我」→ 使用 schedule_notification
-- when 格式: ISO 8601 或相對 +Nm/+Nh/+Nd
-- 循環通知: repeat="daily" / "hourly" / "weekly"
-- 只需一次: 不填 repeat 即可
+## 定時通知使用策略（務必遵守）
+- 用戶只要提到**提醒、通知、倒數、幾分鐘後叫我、每天／每週**等，**必須立刻呼叫** `schedule_notification` 建立排程。
+- **禁止**只回覆「好的我會提醒你」卻不呼叫工具——沒有呼叫就不會真的排程，用戶也不會收到 Telegram 通知。
+- 成功建立後，把工具回傳的排程 ID 與觸發時間**原文轉述**給用戶，並可提醒用 `/notify` 查看列表。
+- when 格式: ISO 8601（用戶本地時間）或相對 `+Nm` / `+Nh` / `+Nd`（與時區無關）
+- 循環: repeat="daily" / "hourly" / "weekly" 等；只提醒一次則不填 repeat
+- 若用戶時區未設定，仍可用相對時間（+1m 等）排程；絕對時間建議先請用戶 `/timezone`
 
 ## 目前已載入工具
 {tool_list}

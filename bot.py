@@ -4,6 +4,7 @@ Telegram bot interface for HydraBot.
 """
 
 import asyncio
+import html
 import json
 import logging
 import platform
@@ -187,7 +188,8 @@ class TelegramBot:
         if not self._ok(update.effective_user.id):
             await update.message.reply_text(UNAUTHORIZED_MSG)
             return
-        name       = re.sub(r'([*_`\[\]])', r'\\\1', update.effective_user.first_name or "")
+        # 使用 HTML 避免 Telegram Markdown 因暱稱中的 _ * ` 等字元解析失敗
+        name_esc = html.escape(update.effective_user.first_name or "")
         n          = len(self.pool.model_configs)
         session_id = self._session_id(update)
 
@@ -199,31 +201,30 @@ class TelegramBot:
 
         uid = update.effective_user.id
         text = (
-            f"👋 你好，{name}！我是 HydraBot 🐍\n\n"
-            f"運行在你的機器上，配備 **{n} 組模型** + **{len(self.pool.tools) + 4} 個工具**。\n"
+            f"👋 你好，{name_esc}！我是 HydraBot 🐍\n\n"
+            f"運行在你的機器上，配備 <b>{n} 組模型</b> + <b>{len(self.pool.tools) + 4} 個工具</b>。\n"
             "可以執行程式碼、管理檔案、派出背景任務——還能建立新工具來擴展自己！\n\n"
-            f"🪪 你的 Telegram ID: `{uid}`\n\n"
-            "**一般指令**\n"
+            f"🪪 你的 Telegram ID: <code>{uid}</code>\n\n"
+            "<b>一般指令</b>\n"
             "/start — 顯示此訊息\n"
             "/reset — 清除目前對話記錄\n"
             "/tools — 列出可用工具\n"
             "/models — 查看／切換模型\n"
             "/tasks — 查看背景任務與進度\n"
             "/notify — 查看／管理定時通知排程\n"
+            "/remind — 直接建立排程（不依賴 AI 工具）\n"
             "/timezone — 查看／修改時區設定\n"
             "/soul — 查看／清除 Bot 人設\n"
             "/whitelist — 管理授權用戶白名單\n"
             "/status — 系統狀態\n\n"
-            + (f"**子代理 Bot 管理**\n{agent_cmds}\n" if agent_cmds else "")
-            + "⏰ **定時通知**\n"
-            "直接告訴我「明天早上 9 點提醒我開會」或「每天通知我查看報告」，\n"
-            "我會自動排程並在時間到時推送通知。\n\n"
-            "📊 **任務進度**\n"
-            "背景任務執行時，可即時回報進度，\n"
-            "用 /tasks 隨時查看最新狀態。\n\n"
+            + (f"<b>子代理 Bot 管理</b>\n{agent_cmds}\n" if agent_cmds else "")
+            + "<b>⏰ 定時通知</b>\n"
+            "可用 /remind 精確排程；或告訴我「明天 9 點提醒我…」由 AI 呼叫工具排程。\n\n"
+            "<b>📊 任務進度</b>\n"
+            "背景任務執行時可即時回報進度，用 /tasks 查看最新狀態。\n\n"
             "直接發訊息開始對話 →"
         )
-        await update.message.reply_text(text, parse_mode="Markdown")
+        await update.message.reply_text(text, parse_mode="HTML")
 
         # First-time timezone setup: prompt if not yet configured
         if self.pool.get_timezone(session_id) is None:
@@ -294,6 +295,63 @@ class TelegramBot:
                     session_id=session_id, tz_offset_hours=tz_offset
                 ),
             )
+
+    async def cmd_remind(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        /remind +1m 測試通知
+        /remind 2026-03-01T09:00:00 開會（依目前會話時區解讀本地時間）
+        """
+        if not self._ok(update.effective_user.id):
+            return
+        session_id = self._session_id(update)
+        args = context.args or []
+        if len(args) < 2:
+            await update.message.reply_text(
+                "📌 <b>/remind</b> — 直接建立定時通知（不經由 AI，一定會寫入排程）\n\n"
+                "用法：<code>/remind &lt;時間&gt; &lt;訊息…&gt;</code>\n\n"
+                "<b>範例</b>\n"
+                "• <code>/remind +1m 測試通知</code>\n"
+                "• <code>/remind +2h 吃藥</code>\n"
+                "• <code>/remind 2026-03-01T09:00:00 開會</code>\n\n"
+                "時間說明：<code>+Nm / +Nh / +Nd</code> 為相對時間；"
+                "ISO 格式為你在此會話設定的時區之本地時間（未設時視為 UTC+0）。\n"
+                "列表／取消：<code>/notify</code>、<code>/notify cancel &lt;id&gt;</code>",
+                parse_mode="HTML",
+            )
+            return
+
+        when = args[0]
+        message = " ".join(args[1:])
+        from scheduler import parse_fire_at, utc_to_local, tz_label
+
+        tz_offset = self.pool.get_timezone(session_id)
+        if tz_offset is None:
+            tz_offset = 0
+        try:
+            fire_at_utc = parse_fire_at(when, tz_offset_hours=tz_offset)
+        except Exception as e:
+            await update.message.reply_text(
+                f"❌ 時間無法解析：{html.escape(str(e))}",
+                parse_mode="HTML",
+            )
+            return
+
+        job_id = self.pool.scheduler.add_job(
+            session_id=session_id,
+            message=message,
+            fire_at=fire_at_utc,
+            repeat=None,
+            label="",
+        )
+        local_dt = utc_to_local(fire_at_utc, tz_offset)
+        tz_str = tz_label(tz_offset)
+        await update.message.reply_text(
+            f"✅ 排程已建立 <code>{html.escape(job_id)}</code>\n"
+            f"觸發（{html.escape(tz_str)} 本地時間）: "
+            f"<code>{local_dt.strftime('%Y-%m-%d %H:%M:%S')}</code>\n"
+            f"訊息: {html.escape(message[:500])}",
+            parse_mode="HTML",
+        )
 
     async def cmd_timezone(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
@@ -919,6 +977,7 @@ class TelegramBot:
             BotCommand("models",       "查看／切換模型"),
             BotCommand("tasks",        "查看背景任務進度"),
             BotCommand("notify",       "查看／管理定時通知排程"),
+            BotCommand("remind",       "直接建立排程（+1m 或 ISO 時間）"),
             BotCommand("timezone",     "查看／設定時區 (UTC+N)"),
             BotCommand("status",       "系統狀態與會話資訊"),
             BotCommand("soul",         "查看／清除 Bot 人設（SOUL.md）"),
@@ -948,6 +1007,7 @@ class TelegramBot:
         app.add_handler(CommandHandler("model",        self.cmd_models))
         app.add_handler(CommandHandler("tasks",        self.cmd_tasks))
         app.add_handler(CommandHandler("notify",       self.cmd_notify))
+        app.add_handler(CommandHandler("remind",       self.cmd_remind))
         app.add_handler(CommandHandler("timezone",     self.cmd_timezone))
         app.add_handler(CommandHandler("status",       self.cmd_status))
         app.add_handler(CommandHandler("soul",         self.cmd_soul))

@@ -497,11 +497,15 @@ def get_builtin_tools(agent: "Agent") -> list:
 
         ("execute_shell", {
             "name": "execute_shell",
-            "description": "執行 Shell 命令（git、npm、系統命令等）。",
+            "description": (
+                "執行 Shell 命令（git、npm、系統工具等）。\n"
+                "Windows（cmd）沒有 pwd/ls：查目前目錄用 `cd`，列出目錄用 `dir`；"
+                "macOS/Linux 可用 `pwd`、`ls`。"
+            ),
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "command": {"type": "string", "description": "Shell 命令"},
+                    "command": {"type": "string", "description": "完整一行 Shell 命令（例：dir、cd、git status）"},
                     "timeout":  {"type": "integer", "description": "逾時秒數（預設 30）"},
                     "cwd":      {"type": "string",  "description": "工作目錄（可選）"},
                 },
