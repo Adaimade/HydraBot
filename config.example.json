@@ -1,5 +1,5 @@
 {
-  "_注释": "复制此文件为 config.json 并填入你的凭据",
+  "_註解": "複製此檔案為 config.json 並填入你的憑證",
 
   "telegram_token": "YOUR_TELEGRAM_BOT_TOKEN",
   "authorized_users": [],
@@ -9,36 +9,36 @@
 
   "models": [
     {
-      "_注释": "模型 0 — 主力模型，用于主对话",
+      "_註解": "模型 0 — 主力模型，用於主對話",
       "name": "主力 Claude Sonnet",
       "provider": "anthropic",
       "api_key": "sk-ant-YOUR_KEY_HERE",
       "model": "claude-sonnet-4-6",
       "base_url": null,
-      "description": "均衡性能，主要对话使用"
+      "description": "均衡性能，主要對話使用"
     },
     {
-      "_注释": "模型 1 — 快速模型，适合子代理轻量任务",
+      "_註解": "模型 1 — 快速模型，適合子代理輕量任務",
       "name": "快速 Claude Haiku",
       "provider": "anthropic",
       "api_key": "sk-ant-YOUR_KEY_HERE",
       "model": "claude-haiku-3-5",
       "base_url": null,
-      "description": "轻量快速，适合简单并行任务"
+      "description": "輕量快速，適合簡單並行任務"
     },
     {
-      "_注释": "模型 2 — 备用模型，示例使用 Google Gemini（也可换成 GPT / 其他兼容 API）",
+      "_註解": "模型 2 — 備用模型，示例使用 Google Gemini（也可換成 GPT / 其他相容 API）",
       "name": "Gemini 2.0 Flash",
       "provider": "google",
       "api_key": "YOUR_GOOGLE_AI_KEY",
       "model": "gemini-2.0-flash",
       "base_url": null,
-      "description": "Google Gemini，快速且支持超长上下文"
+      "description": "Google Gemini，快速且支援超長上下文"
     }
   ],
 
-  "_兼容旧格式说明": "如果不使用 models 数组，可以用以下旧格式（会自动兼容）",
-  "_旧格式示例": {
+  "_相容舊格式說明": "若不使用 models 陣列，可用以下舊格式（會自動相容）",
+  "_舊格式示例": {
     "model_provider": "anthropic",
     "model_api_key": "sk-ant-...",
     "model_name": "claude-sonnet-4-6"
@@ -56,7 +56,7 @@
       "api_key": "YOUR_GOOGLE_AI_KEY",
       "model": "gemini-2.0-flash",
       "base_url": null,
-      "_说明": "base_url 留 null 自动使用 Google AI Studio 端点"
+      "_說明": "base_url 留 null 會自動使用 Google AI Studio 端點"
     }
   }
 }

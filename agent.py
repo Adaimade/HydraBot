@@ -116,8 +116,9 @@ class AgentPool:
         self.running_tasks: dict[str, dict] = {}
         self._tasks_lock = threading.Lock()  # guards running_tasks
 
-        # Persistent Python namespace for execute_python
-        self._py_ns: dict = {"__builtins__": __builtins__}
+        # Per-session Python namespaces for execute_python isolation
+        self._py_namespaces: dict[tuple, dict] = {}
+        self._py_ns_lock = threading.Lock()
 
         # Thread pool for background sub-agents (max 6 concurrent)
         self._executor = concurrent.futures.ThreadPoolExecutor(
@@ -140,6 +141,22 @@ class AgentPool:
         # Load tools
         self._load_builtin_tools()
         self._load_dynamic_tools()
+
+    # ─────────────────────────────────────────────
+    # Python namespace per session
+    # ─────────────────────────────────────────────
+
+    def get_py_namespace(self, session_id: tuple) -> dict:
+        """Return the Python execution namespace for a session, creating if needed."""
+        with self._py_ns_lock:
+            if session_id not in self._py_namespaces:
+                self._py_namespaces[session_id] = {"__builtins__": __builtins__}
+            return self._py_namespaces[session_id]
+
+    def reset_py_namespace(self, session_id: tuple):
+        """Clear the Python namespace for a session."""
+        with self._py_ns_lock:
+            self._py_namespaces.pop(session_id, None)
 
     # ─────────────────────────────────────────────
     # Config parsing (supports old & new format)
@@ -196,6 +213,10 @@ class AgentPool:
         # Build session tools (includes session-bound spawn_agent)
         session_tools = self._session_tools(session_id)
 
+        # Let builtin tools (execute_python) know which session is active
+        import tools_builtin
+        tools_builtin.current_session_id[0] = session_id
+
         try:
             client = self.get_client(model_idx)
             if client.provider == "anthropic":
@@ -215,6 +236,7 @@ class AgentPool:
 
     def reset_conversation(self, session_id: tuple):
         self.conversations.pop(session_id, None)
+        self.reset_py_namespace(session_id)
 
     # ─────────────────────────────────────────────
     # Model management
@@ -384,7 +406,7 @@ class AgentPool:
     # Session tools (inject spawn_agent with bound user_id)
     # ─────────────────────────────────────────────
 
-    def _session_tools(self, user_id: int) -> dict:
+    def _session_tools(self, session_id: tuple) -> dict:
         """Shallow-copy tools and inject session-bound tools:
         - spawn_agent      parallel background sub-agents
         - schedule_notification  schedule a timed message
@@ -401,7 +423,7 @@ class AgentPool:
 
         # ── spawn_agent ────────────────────────────────────────────
         def spawn_agent(task: str, model_index: int = 1, name: str = "") -> str:
-            return pool.spawn_sub_agent(user_id, task, model_index, name)
+            return pool.spawn_sub_agent(session_id, task, model_index, name)
 
         tools["spawn_agent"] = ({
             "name": "spawn_agent",
@@ -443,7 +465,7 @@ class AgentPool:
         ) -> str:
             """Schedule a notification to be sent at a specific time."""
             from scheduler import utc_to_local, tz_label
-            tz_offset = pool.get_timezone(user_id) or 0
+            tz_offset = pool.get_timezone(session_id) or 0
             try:
                 fire_at_utc = parse_fire_at(when, tz_offset_hours=tz_offset)
             except Exception as e:
@@ -457,7 +479,7 @@ class AgentPool:
                 )
 
             job_id = pool.scheduler.add_job(
-                session_id=user_id,
+                session_id=session_id,
                 message=message,
                 fire_at=fire_at_utc,
                 repeat=repeat or None,
@@ -507,9 +529,9 @@ class AgentPool:
 
         # ── list_notifications ─────────────────────────────────────
         def list_notifications() -> str:
-            tz_offset = pool.get_timezone(user_id) or 0
+            tz_offset = pool.get_timezone(session_id) or 0
             return pool.scheduler.format_jobs_list(
-                session_id=user_id, tz_offset_hours=tz_offset
+                session_id=session_id, tz_offset_hours=tz_offset
             )
 
         tools["list_notifications"] = ({
@@ -544,30 +566,58 @@ class AgentPool:
     # Agent loops
     # ─────────────────────────────────────────────
 
+    MAX_API_RETRIES = 3
+    RETRY_BACKOFF = [2, 5, 10]
+
     def _get_schemas(self, tools_dict: dict) -> list:
         return [schema for schema, _ in tools_dict.values()]
 
     def _call_tool(self, name: str, inputs: dict, tools_dict: dict) -> Any:
         if name not in tools_dict:
-            return f"❌ Tool not found: '{name}'"
+            return f"❌ 找不到工具: '{name}'"
         _, func = tools_dict[name]
         try:
             return func(**inputs)
         except Exception:
-            return f"❌ Tool '{name}' error:\n```\n{traceback.format_exc()}\n```"
+            return f"❌ 工具 '{name}' 錯誤:\n```\n{traceback.format_exc()}\n```"
+
+    def _api_call_with_retry(self, call_fn, label: str = "API"):
+        """Wrap an API call with retry + exponential backoff for transient errors."""
+        import time
+        last_err = None
+        for attempt in range(self.MAX_API_RETRIES):
+            try:
+                return call_fn()
+            except Exception as e:
+                last_err = e
+                err_str = str(e).lower()
+                retryable = any(k in err_str for k in (
+                    "rate_limit", "rate limit", "overloaded", "529",
+                    "timeout", "timed out", "connection", "502", "503",
+                ))
+                if not retryable or attempt == self.MAX_API_RETRIES - 1:
+                    raise
+                wait = self.RETRY_BACKOFF[min(attempt, len(self.RETRY_BACKOFF) - 1)]
+                print(f"  ⚠️ {label} 暫時錯誤 (attempt {attempt + 1}): {e}")
+                print(f"     {wait} 秒後重試...")
+                time.sleep(wait)
+        raise last_err
 
     def _anthropic_loop(self, client: _ModelClient, messages: list,
-                         tools_dict: dict, user_id) -> str:
-        system = self._system_prompt(user_id)
+                         tools_dict: dict, session_id) -> str:
+        system = self._system_prompt(session_id)
         schemas = self._get_schemas(tools_dict)
 
         for _ in range(MAX_TOOL_CALLS):
-            resp = client.client.messages.create(
-                model=client.model,
-                max_tokens=client.max_tokens,
-                system=system,
-                tools=schemas,
-                messages=messages,
+            resp = self._api_call_with_retry(
+                lambda: client.client.messages.create(
+                    model=client.model,
+                    max_tokens=client.max_tokens,
+                    system=system,
+                    tools=schemas,
+                    messages=messages,
+                ),
+                label=f"Anthropic/{client.model}",
             )
 
             if resp.stop_reason == "tool_use":
@@ -591,8 +641,8 @@ class AgentPool:
         return "❌ 超過工具呼叫次數上限"
 
     def _openai_loop(self, client: _ModelClient, history: list,
-                      tools_dict: dict, user_id) -> str:
-        system = self._system_prompt(user_id)
+                      tools_dict: dict, session_id) -> str:
+        system = self._system_prompt(session_id)
         messages = [{"role": "system", "content": system}] + history
         schemas = self._get_schemas(tools_dict)
 
@@ -614,7 +664,10 @@ class AgentPool:
             if oai_tools:
                 kwargs["tools"] = oai_tools
 
-            resp = client.client.chat.completions.create(**kwargs)
+            resp = self._api_call_with_retry(
+                lambda: client.client.chat.completions.create(**kwargs),
+                label=f"OpenAI/{client.model}",
+            )
             choice = resp.choices[0]
             msg = choice.message
 
@@ -650,17 +703,17 @@ class AgentPool:
         except Exception:
             return ""
 
-    def _system_prompt(self, user_id) -> str:
+    def _system_prompt(self, session_id) -> str:
         tool_list = (
             ", ".join(sorted(self.tools.keys()))
             + ", spawn_agent, schedule_notification, list_notifications, cancel_notification"
         )
 
-        if user_id is not None:
-            idx = self.user_model.get(user_id, 0)
+        if session_id is not None:
+            idx = self.user_model.get(session_id, 0)
             cur = self.model_configs[idx % len(self.model_configs)]
             cur_info = f"模型 {idx}: **{cur.get('name', cur['model'])}** ({cur['provider']})"
-            tz_offset = self.get_timezone(user_id)
+            tz_offset = self.get_timezone(session_id)
             from scheduler import tz_label
             tz_info = (
                 f"用戶時區: **{tz_label(tz_offset)}**（排程時間以此時區解析）"
@@ -820,6 +873,12 @@ class AgentPool:
         lines.append(f"• `list_notifications`: 列出目前會話的所有定時排程")
         lines.append(f"• `cancel_notification`: 取消一個定時排程")
         return "\n".join(lines)
+
+
+    def shutdown(self):
+        """Gracefully shut down: stop scheduler, drain thread pool."""
+        self.scheduler.stop()
+        self._executor.shutdown(wait=False)
 
 
 # Backward-compat alias (bot.py imports Agent)

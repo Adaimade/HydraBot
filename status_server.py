@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-HydraBot Status Server — 轻量 HTTP 状态页，用于开发环境预览
+HydraBot Status Server — lightweight HTTP status page for dev preview.
 """
 import json, os, sys
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -98,7 +98,7 @@ class Handler(BaseHTTPRequestHandler):
   <h2>快速狀態</h2>
   <div class="grid">
     <div class="stat">
-      <div class="val {'ok' if has_token else 'bad'}">"{'✓' if has_token else '✗'}"</div>
+      <div class="val {'ok' if has_token else 'bad'}">{'✓' if has_token else '✗'}</div>
       <div class="lbl">Telegram Token</div>
     </div>
     <div class="stat">
@@ -106,11 +106,11 @@ class Handler(BaseHTTPRequestHandler):
       <div class="lbl">模型組數</div>
     </div>
     <div class="stat">
-      <div class="val">{tool_count + 13}</div>
+      <div class="val">{tool_count + 17}</div>
       <div class="lbl">工具總數</div>
     </div>
     <div class="stat">
-      <div class="val {'ok' if venv_ok else 'warn'}">"{'✓' if venv_ok else '!'}"</div>
+      <div class="val {'ok' if venv_ok else 'warn'}">{'✓' if venv_ok else '!'}</div>
       <div class="lbl">虛擬環境</div>
     </div>
   </div>
@@ -126,7 +126,7 @@ class Handler(BaseHTTPRequestHandler):
 
 <div class="card">
   <h2>常用命令</h2>
-  <p style="color:#8b949e;font-size:.875rem">在終端機中執行：</p>
+  <p style="color:#8b949e;font-size:.875rem">在終端機中執行</p>
   <div class="cmd">bash &lt;(curl -fsSL https://raw.githubusercontent.com/Adaimade/HydraBot/main/install.sh)</div>
   <div class="cmd" style="margin-top:.5rem">hydrabot start &nbsp;·&nbsp; hydrabot update &nbsp;·&nbsp; hydrabot status &nbsp;·&nbsp; hydrabot logs</div>
 </div>

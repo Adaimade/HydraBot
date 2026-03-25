@@ -18,6 +18,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from agent import Agent
 
+# Module-level session tracker — set by AgentPool before each tool-call loop
+current_session_id = [None]
+
 
 def get_builtin_tools(agent: "Agent") -> list:
     """Return [(name, schema_dict, function), ...]"""
@@ -27,15 +30,15 @@ def get_builtin_tools(agent: "Agent") -> list:
     # ─────────────────────────────────────────────────────────────
 
     def execute_python(code: str) -> str:
-        """Run Python code; variables persist across calls per session."""
-        if not hasattr(agent, "_py_ns"):
-            agent._py_ns = {"__builtins__": __builtins__}
+        """Run Python code; variables persist across calls within the same session."""
+        session = current_session_id[0]
+        ns = agent.get_py_namespace(session) if session else {"__builtins__": __builtins__}
 
         buf_out = io.StringIO()
         buf_err = io.StringIO()
         try:
             with redirect_stdout(buf_out), redirect_stderr(buf_err):
-                exec(compile(code, "<agent>", "exec"), agent._py_ns)
+                exec(compile(code, "<agent>", "exec"), ns)
         except Exception:
             return f"❌ 執行錯誤:\n```\n{traceback.format_exc()}\n```"
 
@@ -275,18 +278,25 @@ def get_builtin_tools(agent: "Agent") -> list:
     # mcp_connect
     # ─────────────────────────────────────────────────────────────
 
+    # Track connected MCP servers: { server_name -> {"proc": Popen, "tools": [str], "command": str} }
+    if not hasattr(agent, "_mcp_servers"):
+        agent._mcp_servers = {}
+
     def mcp_connect(command: str, server_name: str = None) -> str:
         """Start an MCP server process and register its tools."""
+        sname = server_name or command.split()[0]
+
+        # Prevent duplicate connections
+        if sname in agent._mcp_servers:
+            existing = agent._mcp_servers[sname]
+            if existing["proc"].poll() is None:
+                return f"⚠️ MCP 伺服器 `{sname}` 已連線中，工具: {', '.join(f'`{t}`' for t in existing['tools'])}"
+
         try:
             import shlex
             if sys.platform == "win32":
-                # shlex.split posix=True treats backslash as escape char,
-                # breaking Windows paths like "mcp_servers\server.py".
-                # Normalize to forward slashes first (Python accepts / on Windows),
-                # then parse with posix=False to avoid further escape processing.
                 normalized = command.replace("\\", "/")
                 args = shlex.split(normalized, posix=False)
-                # posix=False leaves surrounding quotes in tokens; strip them
                 args = [a.strip('"').strip("'") for a in args]
             else:
                 args = shlex.split(command)
@@ -334,7 +344,6 @@ def get_builtin_tools(agent: "Agent") -> list:
             return f"❌ MCP 錯誤: {resp['error']}"
 
         tools = resp.get("result", {}).get("tools", [])
-        sname = server_name or command.split()[0]
 
         def make_proxy(tn: str):
             def proxy(**kwargs):
@@ -348,8 +357,10 @@ def get_builtin_tools(agent: "Agent") -> list:
                     return f"❌ MCP 呼叫失敗: {exc}"
             return proxy
 
+        tool_names = []
         for tool in tools:
             tn = tool["name"]
+            tool_names.append(tn)
             schema = {
                 "name": tn,
                 "description": tool.get("description", f"MCP tool: {tn}"),
@@ -357,11 +368,50 @@ def get_builtin_tools(agent: "Agent") -> list:
             }
             agent.tools[tn] = (schema, make_proxy(tn))
 
-        names = [t["name"] for t in tools]
+        agent._mcp_servers[sname] = {
+            "proc": proc,
+            "tools": tool_names,
+            "command": command,
+        }
+
         return (
             f"✅ 已連線 MCP 伺服器: `{sname}`\n"
-            f"已載入 {len(tools)} 個工具: {', '.join(f'`{n}`' for n in names)}"
+            f"已載入 {len(tools)} 個工具: {', '.join(f'`{n}`' for n in tool_names)}"
         )
+
+    def mcp_disconnect(server_name: str) -> str:
+        """Disconnect an MCP server and unregister its tools."""
+        if server_name not in agent._mcp_servers:
+            names = ", ".join(f"`{n}`" for n in agent._mcp_servers) or "（無）"
+            return f"❌ 找不到 MCP 伺服器 `{server_name}`\n目前已連線: {names}"
+
+        info = agent._mcp_servers.pop(server_name)
+        proc = info["proc"]
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+        for tn in info["tools"]:
+            agent.tools.pop(tn, None)
+
+        return f"✅ 已斷開 MCP 伺服器 `{server_name}`，移除 {len(info['tools'])} 個工具"
+
+    def list_mcp_servers() -> str:
+        """List all connected MCP servers and their status."""
+        if not agent._mcp_servers:
+            return "📡 目前沒有已連線的 MCP 伺服器"
+        lines = [f"📡 **MCP 伺服器** ({len(agent._mcp_servers)} 個)\n"]
+        for name, info in agent._mcp_servers.items():
+            alive = info["proc"].poll() is None
+            status = "🟢 運行中" if alive else "🔴 已停止"
+            tools_str = ", ".join(f"`{t}`" for t in info["tools"])
+            lines.append(f"{status} **{name}**")
+            lines.append(f"   命令: `{info['command']}`")
+            lines.append(f"   工具: {tools_str}")
+        return "\n".join(lines)
 
     # ─────────────────────────────────────────────────────────────
     # remember
@@ -606,6 +656,24 @@ def get_builtin_tools(agent: "Agent") -> list:
                 "required": ["command"],
             },
         }, mcp_connect),
+
+        ("mcp_disconnect", {
+            "name": "mcp_disconnect",
+            "description": "斷開 MCP 伺服器並移除其工具。",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "server_name": {"type": "string", "description": "要斷開的伺服器名稱"},
+                },
+                "required": ["server_name"],
+            },
+        }, mcp_disconnect),
+
+        ("list_mcp_servers", {
+            "name": "list_mcp_servers",
+            "description": "列出所有已連線的 MCP 伺服器及其狀態。",
+            "input_schema": {"type": "object", "properties": {}},
+        }, list_mcp_servers),
 
         ("remember", {
             "name": "remember",

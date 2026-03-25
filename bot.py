@@ -73,7 +73,7 @@ class TelegramBot:
         print("🧠 初始化 Agent Pool...")
         self.pool = AgentPool(config)
         print(f"✅ 已設定 {len(self.pool.model_configs)} 組模型，"
-              f"已載入 {len(self.pool.tools) + 1} 個工具\n")
+              f"已載入 {len(self.pool.tools) + 4} 個工具\n")
 
     # ─────────────────────────────────────────────
     # Session ID
@@ -781,7 +781,7 @@ class TelegramBot:
                 sign = "+" if tz >= 0 else ""
                 await update.message.reply_text(
                     f"✅ 時區已設定為 **UTC{sign}{tz}**\n\n"
-                    f"現在可以開始對話了，直接發消息即可 →",
+                    f"現在可以開始對話了，直接發訊息即可 →",
                     parse_mode="Markdown",
                 )
             else:
@@ -806,7 +806,7 @@ class TelegramBot:
                 None, self.pool.chat, session_id, text
             )
         except Exception as e:
-            response = f"❌ 内部错误: {e}"
+            response = f"❌ 內部錯誤: {e}"
         finally:
             typing_task.cancel()
 
@@ -814,10 +814,11 @@ class TelegramBot:
 
     async def _keep_typing(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
+            kwargs = {"chat_id": update.effective_chat.id, "action": "typing"}
+            if update.message and getattr(update.message, "is_topic_message", False):
+                kwargs["message_thread_id"] = update.message.message_thread_id
             while True:
-                await context.bot.send_chat_action(
-                    chat_id=update.effective_chat.id, action="typing"
-                )
+                await context.bot.send_chat_action(**kwargs)
                 await asyncio.sleep(4)
         except asyncio.CancelledError:
             pass
@@ -859,7 +860,7 @@ class TelegramBot:
             try:
                 await update.message.reply_text(text)
             except Exception as e:
-                await update.message.reply_text(f"[消息发送失败: {str(e)[:80]}]")
+                await update.message.reply_text(f"[訊息傳送失敗: {str(e)[:80]}]")
 
     # ─────────────────────────────────────────────
     # Startup
@@ -886,7 +887,7 @@ class TelegramBot:
                 current = version_file.read_text().strip()
                 if latest != current:
                     print(f"\n⚠️  新版本可用！({current} → {latest})")
-                    print(f"   运行以下命令更新:")
+                    print(f"   執行以下命令更新:")
                     print(f"   hydrabot update\n")
         except Exception:
             # Silently fail - don't interrupt bot startup
@@ -980,5 +981,17 @@ class TelegramBot:
         print(f"   時區    : {local_tz_str}（本機系統時區）")
         print(f"   會話    : chat_id + thread_id 雙維度隔離")
         print(f"   Ctrl+C 停止\n")
+
+        import signal
+
+        def _shutdown_handler(signum, frame):
+            print("\n🛑 收到終止訊號，正在關閉...")
+            self.pool.shutdown()
+            if self.sub_agents:
+                self.sub_agents.stop_all()
+            raise SystemExit(0)
+
+        signal.signal(signal.SIGINT, _shutdown_handler)
+        signal.signal(signal.SIGTERM, _shutdown_handler)
 
         app.run_polling(drop_pending_updates=True)

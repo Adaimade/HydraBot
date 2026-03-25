@@ -80,7 +80,7 @@ def load_config() -> dict:
         print("❌ config.json 設定有誤，請先填寫：")
         for e in errors:
             print(f"   · {e}")
-        print("\n   執行 hydrabot.bat config 或直接編輯 config.json")
+        print("\n   執行 hydrabot config 或直接編輯 config.json")
         sys.exit(1)
 
     return config
