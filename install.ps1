@@ -214,9 +214,9 @@ if (-not [string]::IsNullOrWhiteSpace($authInput)) {
 
 # Models
 $modelsJson = "["
-$PROVIDERS  = @("anthropic","openai","google","openai-compatible")
-$DEF_MODELS = @("claude-sonnet-4-5","gpt-4o","gemini-2.0-flash","your-model")
-$DEF_NAMES  = @("主力 Claude","快速 GPT","Gemini Flash","自定義模型")
+$PROVIDERS  = @("anthropic","openai","google","openai-compatible","openai-compatible")
+$DEF_MODELS = @("claude-sonnet-4-5","gpt-4o","gemini-2.0-flash","your-model","qwen2.5:latest")
+$DEF_NAMES  = @("主力 Claude","快速 GPT","Gemini Flash","自定義模型","本地 LLM")
 
 for ($i = 0; $i -lt 3; $i++) {
     Write-Host ""
@@ -227,13 +227,19 @@ for ($i = 0; $i -lt 3; $i++) {
     Write-Host "    1 = OpenAI (GPT)" -ForegroundColor DarkGray
     Write-Host "    2 = Google (Gemini)" -ForegroundColor DarkGray
     Write-Host "    3 = OpenAI-compatible（自定義端點）" -ForegroundColor DarkGray
+    Write-Host "    4 = 本地 LLM（Ollama / LM Studio / vLLM）" -ForegroundColor DarkGray
     $pIdx = Ask "選擇（預設 0）："
-    if ($pIdx -notmatch "^[0123]$") { $pIdx = "0" }
+    if ($pIdx -notmatch "^[01234]$") { $pIdx = "0" }
     $provider = $PROVIDERS[$pIdx]
 
     Write-Host "  API Key:" -ForegroundColor White
-    $apiKey = Ask "Key："
-    if ([string]::IsNullOrWhiteSpace($apiKey)) { $apiKey = "YOUR_MODEL_API_KEY" }
+    if ($pIdx -eq "4") {
+        $apiKey = Ask "Key（本地可留空，預設 local）："
+        if ([string]::IsNullOrWhiteSpace($apiKey)) { $apiKey = "local" }
+    } else {
+        $apiKey = Ask "Key："
+        if ([string]::IsNullOrWhiteSpace($apiKey)) { $apiKey = "YOUR_MODEL_API_KEY" }
+    }
 
     $defModel = $DEF_MODELS[$pIdx]
     Write-Host "  模型名稱 [預設: $defModel]:" -ForegroundColor White
@@ -244,9 +250,19 @@ for ($i = 0; $i -lt 3; $i++) {
 
     $baseUrl = "null"
     if ($provider -eq "openai-compatible") {
-        Write-Host "  Base URL (e.g. https://api.example.com/v1):" -ForegroundColor White
-        $bu = Ask "URL："
-        if (-not [string]::IsNullOrWhiteSpace($bu)) { $baseUrl = """$bu""" }
+        if ($pIdx -eq "4") {
+            Write-Host "  常見本地端點：" -ForegroundColor White
+            Write-Host "    - Ollama   : http://127.0.0.1:11434/v1" -ForegroundColor DarkGray
+            Write-Host "    - LM Studio: http://127.0.0.1:1234/v1" -ForegroundColor DarkGray
+            Write-Host "    - vLLM     : http://127.0.0.1:8000/v1" -ForegroundColor DarkGray
+            $bu = Ask "URL（預設 http://127.0.0.1:11434/v1）："
+            if ([string]::IsNullOrWhiteSpace($bu)) { $bu = "http://127.0.0.1:11434/v1" }
+            $baseUrl = """$bu"""
+        } else {
+            Write-Host "  Base URL (e.g. https://api.example.com/v1):" -ForegroundColor White
+            $bu = Ask "URL："
+            if (-not [string]::IsNullOrWhiteSpace($bu)) { $baseUrl = """$bu""" }
+        }
     }
 
     if ($i -gt 0) { $modelsJson += "," }

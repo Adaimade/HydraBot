@@ -77,7 +77,7 @@ OLD_TOOLS=$(grep -c "^    (" tools_builtin.py 2>/dev/null || echo "?")
 printf "\n  📥 下载更新...\n"
 hr
 
-CORE_FILES=(agent.py bot.py main.py discord_bot.py tools_builtin.py scheduler.py requirements.txt scripts/update.sh hydrabot VERSION)
+CORE_FILES=(agent.py bot.py main.py cli.py discord_bot.py learning.py tools_builtin.py scheduler.py requirements.txt scripts/update.sh hydrabot VERSION)
 FAILED=()
 mkdir -p scripts
 for f in "${CORE_FILES[@]}"; do

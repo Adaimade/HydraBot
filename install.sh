@@ -294,7 +294,7 @@ echo ""
 # [3/6]  下载核心文件
 # ══════════════════════════════════════════════════════════════
 step "[3/6] 下載核心檔案"
-CORE_FILES=(agent.py bot.py main.py discord_bot.py tools_builtin.py scheduler.py sub_agent_manager.py requirements.txt scripts/update.sh scripts/start.sh hydrabot VERSION)
+CORE_FILES=(agent.py bot.py main.py cli.py discord_bot.py learning.py tools_builtin.py scheduler.py sub_agent_manager.py requirements.txt scripts/update.sh scripts/start.sh hydrabot VERSION)
 FAILED_DL=()
 for f in "${CORE_FILES[@]}"; do
     printf "  %-28s " "$f"
@@ -410,10 +410,11 @@ configure_model() {
     printf "    ${B}2${NC}) OpenAI / GPT             (sk-...)\n"
     printf "    ${B}3${NC}) Google Gemini            (AI Studio API Key)\n"
     printf "    ${B}4${NC}) 自定義 OpenAI 相容 API  (Groq / DeepSeek / Ollama...)\n"
-    ask "  選擇 [1/2/3/4，預設 1]: "
+    printf "    ${B}5${NC}) 本地 LLM（OpenAI 相容） (Ollama / LM Studio / vLLM)\n"
+    ask "  選擇 [1/2/3/4/5，預設 1]: "
     read -r _p
 
-    local PROVIDER MODEL_DEF BASE_URL="null"
+    local PROVIDER MODEL_DEF BASE_URL="null" NAME_DEF=""
     case "$_p" in
         2) PROVIDER="openai";  MODEL_DEF="gpt-4o" ;;
         3) PROVIDER="google";  MODEL_DEF="gemini-2.0-flash" ;;
@@ -422,11 +423,29 @@ configure_model() {
            read -r _bu; _bu="${_bu// /}"
            [[ -n "$_bu" ]] && BASE_URL="\"$_bu\""
            MODEL_DEF="llama-3.1-8b-instant" ;;
+        5) PROVIDER="openai-compatible"
+           printf "  常見本地端點:\n"
+           printf "    - Ollama   : http://127.0.0.1:11434/v1\n"
+           printf "    - LM Studio: http://127.0.0.1:1234/v1\n"
+           printf "    - vLLM     : http://127.0.0.1:8000/v1\n"
+           ask "  Base URL [預設: http://127.0.0.1:11434/v1]: "
+           read -r _bu; _bu="${_bu// /}"
+           _bu="${_bu:-http://127.0.0.1:11434/v1}"
+           BASE_URL="\"$_bu\""
+           MODEL_DEF="qwen2.5:latest"
+           NAME_DEF="本地 LLM"
+           ;;
         *) PROVIDER="anthropic"; MODEL_DEF="claude-sonnet-4-6" ;;
     esac
 
     # API Key — hidden input
     local KEY=""
+    if [[ "$_p" == "5" ]]; then
+        ask "  API Key（本地可留空）[預設: local]: "
+        read -rs KEY; echo ""
+        KEY="${KEY// /}"
+        KEY="${KEY:-local}"
+    fi
     while [[ -z "$KEY" ]]; do
         ask "  API Key: "
         read -rs KEY; echo ""
@@ -445,7 +464,7 @@ configure_model() {
     ask "  模型名稱 [預設: ${C}${MODEL_DEF}${NC}]: "
     read -r _model; _model="${_model:-$MODEL_DEF}"
 
-    local NAME_DEF="模型${IDX}-${LABEL}"
+    [[ -z "$NAME_DEF" ]] && NAME_DEF="模型${IDX}-${LABEL}"
     ask "  顯示名稱 [預設: ${C}${NAME_DEF}${NC}]: "
     read -r _name; _name="${_name:-$NAME_DEF}"
 

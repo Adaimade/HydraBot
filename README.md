@@ -1,7 +1,7 @@
 # 🐍 HydraBot
 
-> **Self-expanding AI Assistant via Telegram**
-> An AI assistant running on your local machine. Chat with it through Telegram to execute code, manage files, spawn parallel sub-agents, and even create new tools at runtime to expand its own capabilities — just like a hydra: cut off one head and more grow back.
+> **Self-expanding AI Assistant via Telegram / Discord / CLI**
+> An AI assistant running on your local machine. Chat with it through Telegram, Discord, or CLI to execute code, manage files, spawn parallel sub-agents, and even create new tools at runtime to expand its own capabilities — just like a hydra: cut off one head and more grow back.
 
 [![Version](https://img.shields.io/badge/version-1.2.0-blue)](VERSION)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
@@ -18,10 +18,12 @@
 | 🤖 **Multi-Model Support** | Configure multiple AI models simultaneously (primary + fast + backup), switchable mid-conversation |
 | ⚡ **Parallel Sub-Agents** | `spawn_agent` — delegate subtasks to other models, running in parallel without blocking |
 | 🔧 **Self-Expansion** | `create_tool` — the LLM can write and hot-reload new tools at runtime |
+| 🖥️ **Multi-Channel Interface** | Supports Telegram, Discord, and local CLI mode (`python main.py --cli`) |
 | 💻 **Local Execution** | Python / Shell code runs directly on your machine with full filesystem access |
 | ⏰ **Scheduled Notifications** | Schedule one-time or recurring notifications pushed automatically to Telegram |
 | 🌍 **Timezone Awareness** | First-run guide for UTC timezone setup; all notification times shown in user's local time |
 | 🧠 **Persistent Memory** | `memory.json` — store arbitrary key-value data across conversations |
+| 📚 **Learning Loop** | `experience_log.json` + TF-IDF recall; auto-log failures and inject relevant past experience into prompts |
 | 📊 **Progress Reporting** | Sub-agents can call `report_progress` in real-time during execution |
 | 🏢 **Multi-Project Isolation** | Each Telegram group / Topic has completely independent conversation context |
 | 🔌 **MCP Support** | Connect to MCP Servers to dynamically extend tool capabilities |
@@ -95,6 +97,30 @@ hydrabot help           # Show full help
 ```
 
 > ℹ️ **Not working globally?** If using manual install, either navigate to the installation directory or add it to PATH. See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.
+
+---
+
+## CLI Mode
+
+HydraBot also supports terminal chat mode (no Telegram/Discord token required):
+
+```bash
+python main.py --cli
+```
+
+You can also use `-c` or `cli`:
+
+```bash
+python main.py -c
+python main.py cli
+```
+
+CLI built-in commands:
+- `/help`
+- `/reset`
+- `/models`
+- `/tools`
+- `/quit` (or `/exit`)
 
 ---
 
@@ -330,6 +356,8 @@ One sub-agent Bot (project workspace)
 | `read_memory` | Read persistent memory from memory.json |
 | `write_memory` | Write to persistent memory |
 | `create_tool` | Write and hot-reload a new tool (core of self-expansion) |
+| `log_experience` | Save a structured success/failure/insight record into `experience_log.json` |
+| `recall_experience` | Retrieve semantically similar past records for troubleshooting/reuse |
 | `spawn_agent` | Spawn a named background task with selectable model (parallel execution) |
 | `schedule_notification` | Create a scheduled notification |
 | `list_notifications` | List all schedules for the current session |

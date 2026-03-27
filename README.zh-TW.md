@@ -1,7 +1,7 @@
 # 🐍 HydraBot
 
-> **透過 Telegram 操控的自我擴展 AI 助手**
-> 運行在你本地機器上的 AI 助手，透過 Telegram 與之對話，能執行程式碼、管理檔案、並行派出子代理，甚至在執行時自行建立新工具來擴展自身能力——就像九頭蛇一樣，砍掉一頭會再長出更多。
+> **支援 Telegram / Discord / CLI 的自我擴展 AI 助手**
+> 運行在你本地機器上的 AI 助手，透過 Telegram、Discord 或 CLI 與之對話，能執行程式碼、管理檔案、並行派出子代理，甚至在執行時自行建立新工具來擴展自身能力——就像九頭蛇一樣，砍掉一頭會再長出更多。
 
 [![Version](https://img.shields.io/badge/version-1.2.0-blue)](VERSION)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
@@ -18,10 +18,12 @@
 | 🤖 **多模型並存** | 同時配置多組 AI 模型，主力 + 快速 + 備用，對話中可即時切換 |
 | ⚡ **並行子代理** | `spawn_agent` — 把子任務派給其他模型，後台並行執行，互不阻塞 |
 | 🔧 **自我擴展** | `create_tool` — LLM 可在運行時自行撰寫並熱載入新工具 |
+| 🖥️ **多通道介面** | 支援 Telegram、Discord 與本地 CLI 模式（`python main.py --cli`） |
 | 💻 **本地執行** | Python / Shell 程式碼直接跑在你的機器上，可讀寫本地檔案 |
 | ⏰ **定時通知** | 排程一次性或循環通知，到時自動推送到 Telegram |
 | 🌍 **時區感知** | 首次使用引導設定 UTC 時區，所有通知時間皆以用戶本地時間顯示 |
 | 🧠 **持久記憶** | `memory.json` — 可跨對話保存任意 key-value 資料 |
+| 📚 **學習回路** | `experience_log.json` + TF-IDF 檢索；自動記錄失敗並在回應前注入相關經驗 |
 | 📊 **進度推送** | 子代理執行中可即時呼叫 `report_progress` 推送進度更新 |
 | 🏢 **多專案隔離** | 每個 Telegram 群組 / Topic 擁有完全獨立的對話脈絡 |
 | 🔌 **MCP 支援** | 可連接 MCP Server，動態擴充外部工具能力 |
@@ -95,6 +97,30 @@ hydrabot help           # 顯示完整幫助
 ```
 
 > ℹ️ **指令無法執行？** 如使用手動安裝，請進入安裝目錄後執行，或將安裝目錄添加到 PATH。詳見 [QUICKSTART.md](QUICKSTART.md) 的說明。
+
+---
+
+## CLI 模式
+
+HydraBot 支援終端機互動模式（不需要 Telegram/Discord Token）：
+
+```bash
+python main.py --cli
+```
+
+也可使用 `-c` 或 `cli`：
+
+```bash
+python main.py -c
+python main.py cli
+```
+
+CLI 內建指令：
+- `/help`
+- `/reset`
+- `/models`
+- `/tools`
+- `/quit`（或 `/exit`）
 
 ---
 
@@ -330,6 +356,8 @@ HydraBot 提供三個層次的隔離，對應不同使用情境：
 | `read_memory` | 從 memory.json 讀取持久記憶 |
 | `write_memory` | 寫入持久記憶 |
 | `create_tool` | 撰寫並熱載入新工具（自我擴展核心） |
+| `log_experience` | 把成功/失敗/洞見記錄到 `experience_log.json` |
+| `recall_experience` | 依語意檢索相似過往經驗，輔助排錯與複用解法 |
 | `spawn_agent` | 派出命名背景任務並行執行；支援指定模型 |
 | `schedule_notification` | 建立定時通知排程 |
 | `list_notifications` | 列出當前會話的所有排程 |

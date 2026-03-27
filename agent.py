@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from scheduler import NotificationScheduler, parse_fire_at, REPEAT_INTERVALS
+from learning import ExperienceLog, is_likely_failure
 
 
 # Maximum number of tool-call iterations per agent loop turn
@@ -157,6 +158,10 @@ class AgentPool:
         )
         self._load_timezones()
 
+        # 學習回路：結構化長期記憶 + TF-IDF 語意檢索
+        _exp_name = f"{self._data_prefix}experience_log.json"
+        self.experience = ExperienceLog(log_path=Path(_exp_name))
+
         # Load tools
         self._load_builtin_tools()
         self._load_dynamic_tools()
@@ -250,6 +255,16 @@ class AgentPool:
 
         if len(history) > self.max_history:
             self.conversations[session_id] = history[-self.max_history:]
+
+        # 失敗自動記錄：偵測到錯誤訊號時寫入經驗庫，供下次 recall 參考
+        if is_likely_failure(response):
+            try:
+                self.experience.record_failure(
+                    user_message=message,
+                    bot_response=response,
+                )
+            except Exception:
+                pass
 
         return response
 
@@ -759,8 +774,19 @@ class AgentPool:
         soul = self._load_soul()
         soul_section = f"\n## 人設與個性風格（SOUL.md）\n{soul}\n" if soul else ""
 
-        return f"""你是 HydraBot，一個強大的本地 AI 助手，透過 Telegram 與用戶互動，運行在用戶的機器上。你像九頭蛇一樣能不斷長出新的能力——每當用戶需要新功能，你就能自己建立工具來滿足需求。{soul_section}
+        # 注入相關過往經驗（TF-IDF 語意檢索）
+        # session_id 為 None 時（子代理模式）略過以減少 prompt 長度
+        exp_section = ""
+        if session_id is not None:
+            # 用最近一條用戶訊息作為查詢依據
+            history = self.conversations.get(session_id, [])
+            user_msgs = [m["content"] for m in history if m.get("role") == "user"]
+            query = user_msgs[-1] if user_msgs else ""
+            exp_text = self.experience.format_for_prompt(query)
+            if exp_text:
+                exp_section = f"\n{exp_text}\n"
 
+        return f"""你是 HydraBot，一個強大的本地 AI 助手，透過 Telegram 與用戶互動，運行在用戶的機器上。你像九頭蛇一樣能不斷長出新的能力——每當用戶需要新功能，你就能自己建立工具來滿足需求。{soul_section}{exp_section}
 ## 目前使用
 {cur_info}
 {tz_info}
@@ -778,6 +804,7 @@ class AgentPool:
 - **持久記憶**：memory.json
 - **定時通知**：schedule_notification / list_notifications / cancel_notification
 - **任務進度**：子代理內可呼叫 report_progress 即時推送進度給用戶
+- **學習回路**：log_experience（記錄經驗）、recall_experience（語意檢索）
 
 ## spawn_agent 使用策略
 當需要同時處理多件事時，優先考慮 spawn_agent：

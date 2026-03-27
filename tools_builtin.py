@@ -481,6 +481,79 @@ def get_builtin_tools(agent: "Agent") -> list:
         return f"❌ 未知操作: {action}（支援: get / set / clear）"
 
     # ─────────────────────────────────────────────────────────────
+    # log_experience / recall_experience
+    # ─────────────────────────────────────────────────────────────
+
+    def log_experience(
+        entry_type: str = "success",
+        context: str = "",
+        task: str = "",
+        outcome: str = "",
+        correction: str = "",
+        tags: str = "",
+        rating: int = 0,
+    ) -> str:
+        """記錄一筆結構化經驗到長期記憶庫（experience_log.json）。
+
+        entry_type: success / failure / insight
+        context   : 當時的背景（用戶說了什麼、環境狀況）
+        task      : 執行的任務摘要
+        outcome   : 結果（成功內容 or 錯誤訊息）
+        correction: 如果是失敗，填寫修正策略；成功可留空
+        tags      : 逗號分隔的標籤，例如 "python,排程,錯誤"
+        rating    : -1（差）/ 0（普通）/ 1（好）
+        """
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+        entry_id = agent.experience.add(
+            entry_type = entry_type,
+            context    = context,
+            task       = task,
+            outcome    = outcome,
+            correction = correction,
+            tags       = tag_list,
+            rating     = int(rating),
+        )
+        stats = agent.experience.count()
+        return (
+            f"✅ 已記錄 [{entry_type}] 經驗 `{entry_id}`\n"
+            f"   任務: {task[:60]}\n"
+            f"📚 目前經驗庫：共 {stats['total']} 條"
+            f"（成功 {stats.get('success', 0)} / "
+            f"失敗 {stats.get('failure', 0)} / "
+            f"洞見 {stats.get('insight', 0)}）"
+        )
+
+    def recall_experience(query: str = "", top_k: int = 5, list_recent: bool = False) -> str:
+        """從長期記憶庫語意檢索相關過往經驗。
+
+        query      : 搜尋關鍵字或描述，留空則列出最近記錄
+        top_k      : 最多回傳幾條（預設 5）
+        list_recent: 若為 true，改為列出最近 top_k 條（忽略 query）
+        """
+        from learning import TOP_K
+        k = max(1, min(int(top_k), 20))
+
+        if list_recent or not query.strip():
+            return agent.experience.format_list(n=k)
+
+        hits = agent.experience.recall(query, top_k=k)
+        if not hits:
+            return f"🔍 找不到與「{query}」相關的經驗"
+
+        lines = [f"🔍 **相關經驗** — 查詢: {query}\n"]
+        for i, entry in enumerate(hits, 1):
+            icon = {"success": "✅", "failure": "⚠️", "insight": "💡"}.get(
+                entry.entry_type, "📝"
+            )
+            lines.append(
+                f"{i}. {icon} `{entry.entry_id}`  [{entry.entry_type}]  {entry.timestamp[:10]}\n"
+                f"   任務: {entry.task[:100]}\n"
+                f"   結果: {entry.outcome[:100]}"
+                + (f"\n   修正: {entry.correction[:100]}" if entry.correction and entry.correction != "（待補充修正策略）" else "")
+            )
+        return "\n".join(lines)
+
+    # ─────────────────────────────────────────────────────────────
     # Schemas
     # ─────────────────────────────────────────────────────────────
 
@@ -713,4 +786,75 @@ def get_builtin_tools(agent: "Agent") -> list:
                 "required": ["action"],
             },
         }, edit_soul),
+
+        ("log_experience", {
+            "name": "log_experience",
+            "description": (
+                "記錄一筆結構化經驗到長期記憶庫（experience_log.json）。\n"
+                "在完成任務後、遇到錯誤後、或獲得重要洞見時主動呼叫，讓 HydraBot 越用越聰明。\n"
+                "每次任務成功或失敗後，建議主動呼叫此工具記錄。"
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "entry_type": {
+                        "type": "string",
+                        "description": "經驗類型",
+                        "enum": ["success", "failure", "insight"],
+                    },
+                    "context": {
+                        "type": "string",
+                        "description": "當時的背景：用戶的要求、環境狀況（最多 1000 字）",
+                    },
+                    "task": {
+                        "type": "string",
+                        "description": "執行的任務摘要（最多 500 字）",
+                    },
+                    "outcome": {
+                        "type": "string",
+                        "description": "結果：成功的具體內容 or 失敗的錯誤訊息（最多 800 字）",
+                    },
+                    "correction": {
+                        "type": "string",
+                        "description": "若為失敗，填寫修正策略或下次應如何處理；成功可留空",
+                    },
+                    "tags": {
+                        "type": "string",
+                        "description": "逗號分隔的標籤，例如 \"python,排程,api\"",
+                    },
+                    "rating": {
+                        "type": "integer",
+                        "description": "評分：-1（差）/ 0（普通）/ 1（好）",
+                        "enum": [-1, 0, 1],
+                    },
+                },
+                "required": ["entry_type", "task", "outcome"],
+            },
+        }, log_experience),
+
+        ("recall_experience", {
+            "name": "recall_experience",
+            "description": (
+                "從長期記憶庫語意檢索與當前任務相關的過往經驗。\n"
+                "遇到困難任務、不確定最佳做法、或要排查問題時，先查詢此工具以避免重複錯誤。"
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "搜尋關鍵字或描述，例如「排程通知失敗」或「爬蟲 Python」",
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "最多回傳幾條記錄（預設 5，最大 20）",
+                    },
+                    "list_recent": {
+                        "type": "boolean",
+                        "description": "若為 true，改為列出最近 top_k 條（忽略 query）",
+                    },
+                },
+                "required": [],
+            },
+        }, recall_experience),
     ]

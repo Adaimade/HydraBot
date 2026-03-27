@@ -41,7 +41,8 @@ def _discord_configured(config: dict) -> bool:
     return bool(t) and "YOUR_DISCORD_BOT_TOKEN" not in t
 
 
-def load_config() -> dict:
+def load_config(*, allow_without_messengers: bool = False) -> dict:
+    """allow_without_messengers: True 時不強制設定 telegram_token / discord_token（供 CLI 模式使用）。"""
     config_path = Path("config.json")
 
     if not config_path.exists():
@@ -67,8 +68,9 @@ def load_config() -> dict:
 
     errors = []
 
-    if not _telegram_configured(config) and not _discord_configured(config):
-        errors.append("請至少設定有效的 telegram_token 或 discord_token（至少一項）")
+    if not allow_without_messengers:
+        if not _telegram_configured(config) and not _discord_configured(config):
+            errors.append("請至少設定有效的 telegram_token 或 discord_token（至少一項）")
 
     # Check model config — support both new (models array) and old (model_api_key) format
     models = config.get("models", [])
@@ -96,6 +98,12 @@ def load_config() -> dict:
     return config
 
 
+def _wants_cli(argv: list[str]) -> bool:
+    """是否啟動終端機模式：python main.py --cli 或 python main.py -c 或 python main.py cli"""
+    rest = argv[1:]
+    return "--cli" in rest or "-c" in rest or (len(rest) >= 1 and rest[0] == "cli")
+
+
 def main():
     # Set working directory to the installation directory (where config.json is)
     # This ensures relative paths in tools work correctly
@@ -107,7 +115,14 @@ def main():
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-    config = load_config()
+    cli_mode = _wants_cli(sys.argv)
+    config = load_config(allow_without_messengers=cli_mode)
+
+    if cli_mode:
+        from cli import run_cli
+
+        run_cli(config)
+        return
     tg = _telegram_configured(config)
     dc = _discord_configured(config)
 
