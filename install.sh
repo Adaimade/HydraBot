@@ -478,9 +478,15 @@ configure_model() {
     echo ""
 }
 
-configure_model 0 "主力模型" "required"
-configure_model 1 "快速模型（子代理推薦）" "optional"
-configure_model 2 "備用／專用模型" "optional"
+printf "\n  ℹ️  HydraBot 採三層模型架構：\n"
+printf "      主力（primary）── 主對話、規劃、撰寫、除錯、Code Review\n"
+printf "      快速（fast）    ── 建議分析、一般查詢、中間整合\n"
+printf "      日常（daily）   ── 讀檔摘要、格式轉換、輕量資料整理\n"
+printf "     主力模型自動調度子代理；快速/日常可與主力相同或更輕量的模型。\n\n"
+
+configure_model 0 "主力模型（primary）" "required"
+configure_model 1 "快速模型（fast）" "optional"
+configure_model 2 "日常模型（daily）" "optional"
 
 # ══════════════════════════════════════════════════════════════
 # [6/6]  写入配置、建立环境、安装依赖
@@ -527,11 +533,27 @@ for i in range(3):
 if not models:
     print("❌ 至少需要設定一組模型！", file=sys.stderr); sys.exit(1)
 
+n = len(models)
+model_roles = {
+    "primary": 0,
+    "fast":    min(1, n - 1),
+    "daily":   min(2, n - 1),
+}
+
 config = {
     "telegram_token":   env("HB_TG_TOKEN"),
     "authorized_users": auth,
     "max_tokens":  4096,
     "max_history": 50,
+    "model_roles": model_roles,
+    "spawn_routing": {
+        "reading": "daily",
+        "writing": "primary",
+        "review":  "primary",
+        "advice":  "fast",
+        "debug":   "primary",
+        "general": "fast",
+    },
     "models": models,
 }
 

@@ -108,6 +108,12 @@ class AgentPool:
         # Model configs parsed from config.json
         self.model_configs: list[dict] = self._parse_models(config)
 
+        # 三層模型角色映射  { "primary"/"fast"/"daily" -> model_index }
+        self.model_roles: dict[str, int] = self._parse_model_roles()
+
+        # 子代理路由：任務類型 → tier 名稱 → model_index（由 _parse_spawn_routing 解析）
+        self.spawn_routing: dict[str, str] = self._parse_spawn_routing()
+
         # Lazy-init model clients  { index -> _ModelClient }
         self._clients: dict[int, _ModelClient] = {}
 
@@ -185,6 +191,131 @@ class AgentPool:
     # ─────────────────────────────────────────────
     # Config parsing (supports old & new format)
     # ─────────────────────────────────────────────
+
+    # ── 三層模型角色 ──────────────────────────────────────────────
+
+    _MODEL_TIERS = ("primary", "fast", "daily")
+
+    def _parse_model_roles(self) -> dict[str, int]:
+        """解析 config.model_roles，將 primary/fast/daily 對應到 model array 索引。
+        預設：primary=0, fast=1, daily=2（若只有 1 或 2 組模型則以最大可用索引補足）。
+        """
+        n = len(self.model_configs)
+        raw = (self.config or {}).get("model_roles") or {}
+        defaults = {"primary": 0, "fast": min(1, n - 1), "daily": min(2, n - 1)}
+        out: dict[str, int] = {}
+        for tier, default_idx in defaults.items():
+            try:
+                idx = int(raw.get(tier, default_idx))
+            except (TypeError, ValueError):
+                idx = default_idx
+            out[tier] = max(0, min(idx, n - 1))
+        return out
+
+    # ── 任務類型 → tier 路由 ──────────────────────────────────────
+
+    _TASK_ROLES = frozenset(
+        ("auto", "reading", "writing", "review", "advice", "debug", "general")
+    )
+
+    def _parse_spawn_routing(self) -> dict[str, str]:
+        """解析 config.spawn_routing，回傳 task_type → tier_name 的對應表。
+        預設語意（可在 config.json 的 spawn_routing 覆寫）：
+          - 高強度任務（writing/review/debug）→ primary
+          - 輕量任務（reading/advice/general）→ fast 或 daily
+        """
+        raw = (self.config or {}).get("spawn_routing") or {}
+        valid_tiers = set(self._MODEL_TIERS)
+        defaults: dict[str, str] = {
+            "reading": "daily",
+            "writing": "primary",
+            "review": "primary",
+            "advice": "fast",
+            "debug": "primary",
+            "general": "fast",
+        }
+        out: dict[str, str] = {}
+        for task_type, default_tier in defaults.items():
+            v = str(raw.get(task_type, default_tier)).lower()
+            out[task_type] = v if v in valid_tiers else default_tier
+        return out
+
+    def _infer_spawn_task_role(self, task: str) -> str:
+        """依任務文字粗略分類（中英關鍵字），供 task_role=auto 時使用。"""
+        if not (task or "").strip():
+            return "general"
+        t = task.lower()
+        if any(
+            k in task
+            for k in ("抓 bug", "除錯", "偵錯", "traceback", "堆疊", "錯誤原因", "為何失敗")
+        ) or any(
+            k in t
+            for k in ("find bug", "bug hunt", "fix bug", "stack trace", "debug", "root cause")
+        ):
+            return "debug"
+        if any(k in task for k in ("審查", "code review", "檢視程式")) or any(
+            k in t for k in ("review code", "audit code", "code audit")
+        ):
+            return "review"
+        if any(
+            k in task
+            for k in ("撰寫", "實作", "程式碼", "實現功能", "refactor", "重構")
+        ) or any(
+            k in t for k in ("write code", "implement", "refactor", "build feature")
+        ):
+            return "writing"
+        if any(
+            k in task
+            for k in ("讀取", "閱讀", "摘要", "整理文件", "萃取", "parse")
+        ) or any(
+            k in t for k in ("summarize", "read file", "extract", "parse document")
+        ):
+            return "reading"
+        if any(k in task for k in ("建議", "建議方案", "有何看法")) or any(
+            k in t for k in ("advise", "suggest", "recommend", "opinion")
+        ):
+            return "advice"
+        return "general"
+
+    def tier_to_model_index(self, tier: str) -> int:
+        """tier 名稱 → model array 索引，未知 tier 退回 primary。"""
+        return self.model_roles.get(tier, self.model_roles["primary"])
+
+    def resolve_spawn_model(
+        self,
+        task: str,
+        task_role: str = "auto",
+        model_index: int | None = None,
+    ) -> tuple[int, str, str]:
+        """
+        決定子代理使用的模型索引。
+        優先順序：
+          1. model_index 非 None → 使用者明確指定，直接用
+          2. task_role 非 auto → 查 spawn_routing 得到 tier，再查 model_roles 得到 index
+          3. task_role=auto → 依任務文字推斷 task_type，再走 2
+        回傳：(model_idx, resolved_tier, 路由說明行)
+        """
+        n = len(self.model_configs)
+        if model_index is not None:
+            try:
+                idx = max(0, min(int(float(model_index)), n - 1))
+            except (TypeError, ValueError):
+                pass
+            else:
+                m = self.model_configs[idx]
+                return idx, "manual", f"使用者指定模型索引 **{idx}**（{m.get('name', m['model'])}）"
+
+        r = (task_role or "auto").strip().lower()
+        if r not in self._TASK_ROLES:
+            r = "auto"
+        if r == "auto":
+            r = self._infer_spawn_task_role(task)
+
+        tier = self.spawn_routing.get(r, "fast")
+        idx  = self.tier_to_model_index(tier)
+        m    = self.model_configs[idx]
+        tier_zh = {"primary": "主力", "fast": "快速", "daily": "日常"}.get(tier, tier)
+        return idx, tier, f"任務類型 `{r}` → **{tier_zh}模型**（{m.get('name', m['model'])}）"
 
     def _parse_models(self, cfg: dict) -> list[dict]:
         """Support both new `models` array and old single-model keys."""
@@ -306,10 +437,19 @@ class AgentPool:
     # Sub-agent spawning
     # ─────────────────────────────────────────────
 
-    def spawn_sub_agent(self, session_id: tuple, task: str, model_index: int, name: str = "") -> str:
+    def spawn_sub_agent(
+        self,
+        session_id: tuple,
+        task: str,
+        model_index: int,
+        name: str = "",
+        *,
+        routing_note: str = "",
+    ) -> str:
         """Spawn a background sub-agent. Returns immediately.
         session_id = (chat_id, thread_id) — result is delivered back to this session.
         name — optional human-readable label for this sub-agent.
+        routing_note — 可選，說明為何選此模型（自動路由或手動指定）。
         """
         n = len(self.model_configs)
         model_index = max(0, min(model_index, n - 1))
@@ -409,9 +549,11 @@ class AgentPool:
 
         self._executor.submit(_run)
 
+        route_line = f"{routing_note}\n" if routing_note else ""
         return (
             f"✅ 子代理 **{display_name}** 已啟動 (`{task_id}`)\n"
             f"模型: **{client.name}**\n"
+            f"{route_line}"
             f"任務: {task[:80]}\n\n"
             f"⏳ 後台運行中，完成後自動推送結果 📨"
         )
@@ -450,38 +592,90 @@ class AgentPool:
         tools = dict(self.tools)
         pool  = self
         n     = len(self.model_configs)
+        tier_zh = {"primary": "主力", "fast": "快速", "daily": "日常"}
+        tier_desc = "\n".join(
+            f"  · **{tier_zh.get(t, t)}（{t}）** → 模型索引 `{pool.model_roles[t]}`"
+            f"（{pool.model_configs[pool.model_roles[t]].get('name', pool.model_configs[pool.model_roles[t]]['model'])}）"
+            for t in pool._MODEL_TIERS
+        )
+        route_desc = "\n".join(
+            f"  · `{role}` → **{tier_zh.get(tier, tier)}**"
+            for role, tier in sorted(pool.spawn_routing.items())
+        )
         model_desc = "\n".join(
             f"  {i}: {m.get('name', m['model'])} — {m.get('description', '')}"
             for i, m in enumerate(self.model_configs)
         )
 
         # ── spawn_agent ────────────────────────────────────────────
-        def spawn_agent(task: str, model_index: int = 1, name: str = "") -> str:
-            return pool.spawn_sub_agent(session_id, task, model_index, name)
+        def spawn_agent(
+            task: str,
+            name: str = "",
+            task_role: str = "auto",
+            model_index: int | None = None,
+        ) -> str:
+            idx, resolved_role, note = pool.resolve_spawn_model(
+                task, task_role, model_index
+            )
+            if resolved_role == "manual":
+                rnote = note
+            else:
+                rnote = f"{note}（任務類型 `{resolved_role}`）"
+            return pool.spawn_sub_agent(
+                session_id, task, idx, name, routing_note=rnote
+            )
 
         tools["spawn_agent"] = ({
             "name": "spawn_agent",
             "description": (
-                f"在後台啟動子代理，並行處理任務，完成後自動把結果推送給用戶。\n"
-                f"子代理支援呼叫 report_progress 即時推送進度。\n"
-                f"可同時啟動多個（建議不超過 3 個）。子代理不會再啟動子代理。\n"
-                f"呼叫前請先詢問用戶：(1) 要替子代理取什麼名稱，(2) 要用預設模型還是指定其他模型。\n"
-                f"可用模型 (model_index):\n{model_desc}"
+                "在後台啟動子代理，並行處理任務，完成後自動把結果推送給用戶。\n"
+                "\n"
+                "**三層模型架構**\n"
+                f"{tier_desc}\n"
+                "\n"
+                "**任務類型 → 自動選模型**（task_role=auto 時依任務文字推斷）：\n"
+                f"{route_desc}\n"
+                "\n"
+                "**使用原則**：\n"
+                "· 你（主力）負責分析任務、決定拆分方式，並依 task_role 把子任務派給合適強度的模型。\n"
+                "· 不必每次問用戶要哪個模型；只有在用戶明確指定模型索引時才填 model_index。\n"
+                "· 可同時啟動多個子代理並行分工（建議 ≤ 3 個），各自處理不同子任務後自動回傳。\n"
+                "· 子代理可呼叫 report_progress 推送進度；子代理內不可再呼叫 spawn_agent（防止遞迴）。"
             ),
             "input_schema": {
                 "type": "object",
                 "properties": {
                     "task": {
                         "type": "string",
-                        "description": "交給子代理的完整任務描述（越詳細越好）",
+                        "description": "交給子代理的完整任務描述（越詳細越好，便於自動路由判斷）",
                     },
                     "name": {
                         "type": "string",
-                        "description": "子代理的名稱（由用戶命名，便於識別），例如「資料爬取」、「報告生成」",
+                        "description": "子代理顯示名稱，便於識別（例如「文件摘要」、「實作 API」、「Code review」）",
+                    },
+                    "task_role": {
+                        "type": "string",
+                        "description": (
+                            "任務類型，用於自動選擇模型等級。"
+                            "auto=依 task 文字推斷；reading=讀檔/摘要；writing=撰寫程式或長文；"
+                            "review=審查；advice=建議與方案；debug=除錯/抓 bug；general=一般輕量。"
+                        ),
+                        "enum": [
+                            "auto",
+                            "reading",
+                            "writing",
+                            "review",
+                            "advice",
+                            "debug",
+                            "general",
+                        ],
                     },
                     "model_index": {
                         "type": "integer",
-                        "description": f"使用哪個模型（0–{n - 1}，預設 1 快速模型）；詢問用戶後填入",
+                        "description": (
+                            f"可選。僅當用戶明確要求使用某個模型時填 0–{n - 1}；"
+                            "省略則完全依 task_role / 自動推斷路由，勿為每個子任務打擾用戶。"
+                        ),
                     },
                 },
                 "required": ["task"],
@@ -800,23 +994,26 @@ class AgentPool:
 - **安裝套件**：pip 安裝 Python 套件
 - **網路請求**：HTTP GET/POST 等
 - **擴展自身**：create_tool（熱載入）、create_mcp_server、mcp_connect
-- **並行子代理**：spawn_agent — 把子任務派給其他模型，後台並行運行，互不阻塞
+- **並行子代理**：spawn_agent — 你（主力）調度三層模型協同完成複雜任務
 - **持久記憶**：memory.json
 - **定時通知**：schedule_notification / list_notifications / cancel_notification
 - **任務進度**：子代理內可呼叫 report_progress 即時推送進度給用戶
 - **學習回路**：log_experience（記錄經驗）、recall_experience（語意檢索）
 
-## spawn_agent 使用策略
-當需要同時處理多件事時，優先考慮 spawn_agent：
-- **呼叫前必須先詢問用戶兩件事**：
-  1. 「要替這個子代理取什麼名稱？」（例如：資料爬取、報告生成、程式偵錯）
-  2. 「要用預設模型，還是指定其他模型？」（列出可用模型供選擇）
-- 同時派出多個子代理（建議 ≤ 3 個）
-- 輕量任務 → model_index=1（快速模型）
-- 複雜／專業任務 → model_index=0（主力模型）或 model_index=2
-- 子代理完成後結果自動推送，不需要等待
-- 子代理內不要再次呼叫 spawn_agent（防止遞迴）
-- 子代理可使用 report_progress 在執行途中推送進度更新
+## 子代理調度策略（三層模型）
+你是**主力模型**，負責理解任務、規劃拆分、調度子代理，並整合所有結果回覆給用戶。
+
+可用的三個模型層級：
+- **主力（primary）**：高強度推理、撰寫程式、除錯、Code Review
+- **快速（fast）**：中等任務、建議分析、一般查詢、中間結果整合
+- **日常（daily）**：輕量任務、讀取摘要文件、格式轉換、資料整理
+
+調度原則：
+- 對複雜任務，主動拆成多個子任務並**同時**派出多個子代理（建議 ≤ 3 個）
+  - 例：一個任務 = 日常讀檔摘要 + 主力實作程式碼 + 主力除錯驗證
+- `task_role` 填寫任務類型（writing/debug/review/reading/advice/general/auto），系統自動對應到正確層級
+- **不要**為每個子任務詢問用戶要哪個模型；只有在用戶**明確要求**時才填 `model_index`
+- 子代理完成後結果自動推送，你可在最後統整所有子代理結果
 
 ## 定時通知使用策略（務必遵守）
 - 用戶只要提到**提醒、通知、倒數、幾分鐘後叫我、每天／每週**等，**必須立刻呼叫** `schedule_notification` 建立排程。

@@ -15,33 +15,50 @@
   "max_tokens": 4096,
   "max_history": 50,
 
+  "_註解_model_roles": "三層模型角色對應（填 models 陣列的索引）：primary=主力、fast=快速、daily=日常",
+  "model_roles": {
+    "primary": 0,
+    "fast": 1,
+    "daily": 2
+  },
+
+  "_註解_spawn_routing": "子代理任務類型 → 使用哪個層級的模型（primary/fast/daily）。主力自動依此調度，無需使用者選擇。",
+  "spawn_routing": {
+    "reading": "daily",
+    "writing": "primary",
+    "review": "primary",
+    "advice": "fast",
+    "debug": "primary",
+    "general": "fast"
+  },
+
   "models": [
     {
-      "_註解": "模型 0 — 主力模型，用於主對話",
+      "_註解": "模型 0 — 主力模型（primary）：負責主對話、規劃與調度子代理，處理撰寫/除錯/審查等高強度任務",
       "name": "主力 Claude Sonnet",
       "provider": "anthropic",
       "api_key": "sk-ant-YOUR_KEY_HERE",
       "model": "claude-sonnet-4-6",
       "base_url": null,
-      "description": "均衡性能，主要對話使用"
+      "description": "主力模型，高強度推理與程式任務"
     },
     {
-      "_註解": "模型 1 — 快速模型，適合子代理輕量任務",
+      "_註解": "模型 1 — 快速模型（fast）：處理建議、一般查詢、中間整合等中量任務",
       "name": "快速 Claude Haiku",
       "provider": "anthropic",
       "api_key": "sk-ant-YOUR_KEY_HERE",
       "model": "claude-haiku-3-5",
       "base_url": null,
-      "description": "輕量快速，適合簡單並行任務"
+      "description": "快速模型，適合中量並行子任務"
     },
     {
-      "_註解": "模型 2 — 備用模型，示例使用 Google Gemini（也可換成 GPT / 其他相容 API）",
+      "_註解": "模型 2 — 日常模型（daily）：處理讀檔摘要、格式轉換等輕量任務（可與快速模型相同）",
       "name": "Gemini 2.0 Flash",
       "provider": "google",
       "api_key": "YOUR_GOOGLE_AI_KEY",
       "model": "gemini-2.0-flash",
       "base_url": null,
-      "description": "Google Gemini，快速且支援超長上下文"
+      "description": "日常模型，輕量摘要與資料整理"
     }
   ],
 

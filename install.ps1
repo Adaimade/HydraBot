@@ -218,9 +218,17 @@ $PROVIDERS  = @("anthropic","openai","google","openai-compatible","openai-compat
 $DEF_MODELS = @("claude-sonnet-4-5","gpt-4o","gemini-2.0-flash","your-model","qwen2.5:latest")
 $DEF_NAMES  = @("主力 Claude","快速 GPT","Gemini Flash","自定義模型","本地 LLM")
 
+Write-Host ""
+Write-Host "  HydraBot 採三層模型架構：" -ForegroundColor DarkGray
+Write-Host "    主力(primary) : 主對話、規劃、撰寫、除錯、Code Review" -ForegroundColor DarkGray
+Write-Host "    快速(fast)    : 建議分析、一般查詢、中間整合" -ForegroundColor DarkGray
+Write-Host "    日常(daily)   : 讀檔摘要、格式轉換、輕量資料整理" -ForegroundColor DarkGray
+Write-Host "    主力模型自動調度子代理；快速/日常可與主力相同或更輕量的模型。" -ForegroundColor DarkGray
+Write-Host ""
+
 for ($i = 0; $i -lt 3; $i++) {
     Write-Host ""
-    $label = if ($i -eq 0) {"主力模型"} elseif ($i -eq 1) {"快速／子代理"} else {"備用模型"}
+    $label = if ($i -eq 0) {"主力模型 (primary)"} elseif ($i -eq 1) {"快速模型 (fast)"} else {"日常模型 (daily)"}
     Write-Host "  --- 模型 #$i ($label) ---" -ForegroundColor Cyan
     Write-Host "  Provider:" -ForegroundColor White
     Write-Host "    0 = Anthropic (Claude)" -ForegroundColor DarkGray
@@ -280,14 +288,32 @@ for ($i = 0; $i -lt 3; $i++) {
 }
 $modelsJson += "`n  ]"
 
+# Compute model_roles based on how many models were configured
+$modelCount = ([regex]::Matches($modelsJson, '"provider"')).Count
+$fastIdx  = if ($modelCount -ge 2) { 1 } else { 0 }
+$dailyIdx = if ($modelCount -ge 3) { 2 } else { $fastIdx }
+
 # Write config.json
 $configContent = @"
 {
   "telegram_token": "$TG_TOKEN",
   "authorized_users": $authJson,
-  "models": $modelsJson,
   "max_tokens": 4096,
-  "max_history": 50
+  "max_history": 50,
+  "model_roles": {
+    "primary": 0,
+    "fast": $fastIdx,
+    "daily": $dailyIdx
+  },
+  "spawn_routing": {
+    "reading": "daily",
+    "writing": "primary",
+    "review":  "primary",
+    "advice":  "fast",
+    "debug":   "primary",
+    "general": "fast"
+  },
+  "models": $modelsJson
 }
 "@
 # Write WITHOUT BOM — PowerShell 5.x Set-Content UTF8 adds BOM which breaks Python json parser
