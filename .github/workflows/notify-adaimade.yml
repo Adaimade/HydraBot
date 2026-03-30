@@ -11,6 +11,6 @@ jobs:
       - name: Trigger Adaimade image rebuild
         uses: peter-evans/repository-dispatch@v3
         with:
-          token: ${{ secrets.ADAIMADE_PAT }}
+          token: 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
           repository: Adaimade/Adaimade
           event-type: hydrabot-updated
