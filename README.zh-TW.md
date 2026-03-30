@@ -15,8 +15,8 @@
 
 | 功能 | 說明 |
 |------|------|
-| 🤖 **多模型並存** | 同時配置多組 AI 模型，主力 + 快速 + 備用，對話中可即時切換 |
-| ⚡ **並行子代理** | `spawn_agent` — 把子任務派給其他模型，後台並行執行，互不阻塞 |
+| 🤖 **三層模型角色** | **主力 / 快速 / 日常** 對應 `models` 索引；安裝時依序設定，對話中可 `/models` 切換 |
+| ⚡ **子代理自動調度** | `spawn_agent` 依任務類型路由到對應層級；主力負責規劃與整合，無需用戶逐個選模型 |
 | 🔧 **自我擴展** | `create_tool` — LLM 可在運行時自行撰寫並熱載入新工具 |
 | 🖥️ **多通道介面** | 支援 Telegram、Discord 與本地 CLI 模式（`python main.py --cli`） |
 | 💻 **本地執行** | Python / Shell 程式碼直接跑在你的機器上，可讀寫本地檔案 |
@@ -42,7 +42,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Adaimade/HydraBot/main/insta
 1. 檢測並安裝 Python 3.10+
 2. 克隆/下載核心檔案
 3. 建立 Python 虛擬環境並安裝依賴
-4. 互動式填寫 Telegram Token、AI API Key
+4. 互動式填寫 Telegram Token、AI API Key，並依序設定**主力 / 快速 / 日常**三組模型（可含本地 LLM）
 5. 設定全域 `hydrabot` 指令（可從任何地方使用）
 
 ### Windows (PowerShell)
@@ -79,6 +79,22 @@ copy config.example.json config.json
 ```
 
 > ℹ️ **PATH 設置**：手動安裝後，請將安裝目錄添加到系統 PATH（這樣 `hydrabot` 可以從任何地方使用），或者一律從安裝目錄中執行命令。詳見 [QUICKSTART.md](QUICKSTART.md) 的 PATH 設置說明。
+
+### 連接 HydraBot-code1.0 本地向量庫（選用）
+
+若你另有 **HydraBot-code1.0** 等本地 RAG 專案（Chroma + Ollama），可在 **同一個 venv** 內安裝額外依賴並設定路徑，讓 HydraBot 透過內建工具 `code1_rag_query` 查詢該向量庫：
+
+```bash
+pip install -r requirements_rag.txt
+```
+
+在 `config.json` 加入（請改成你本機的絕對路徑）：
+
+```json
+"hydrabot_code1_root": "/Users/you/GitHub/HydraBot-code1.0"
+```
+
+並確認該專案已執行過索引（`python src/ingest.py`）、Ollama 可連線。對話中模型可呼叫 `code1_rag_query` 取得依庫作答。
 
 ---
 
@@ -136,27 +152,41 @@ CLI 內建指令：
   "max_tokens": 4096,
   "max_history": 50,
 
+  "model_roles": {
+    "primary": 0,
+    "fast": 1,
+    "daily": 2
+  },
+  "spawn_routing": {
+    "reading": "daily",
+    "writing": "primary",
+    "review": "primary",
+    "advice": "fast",
+    "debug": "primary",
+    "general": "fast"
+  },
+
   "models": [
     {
       "name": "主力 Claude Sonnet",
       "provider": "anthropic",
       "api_key": "sk-ant-...",
       "model": "claude-sonnet-4-6",
-      "description": "均衡性能，主要對話使用"
+      "description": "主力模型，高強度推理與程式任務"
     },
     {
       "name": "快速 Claude Haiku",
       "provider": "anthropic",
       "api_key": "sk-ant-...",
       "model": "claude-haiku-3-5",
-      "description": "輕量快速，適合並行子代理任務"
+      "description": "快速模型，建議與中量並行子任務"
     },
     {
       "name": "Gemini 2.0 Flash",
       "provider": "google",
       "api_key": "YOUR_GOOGLE_AI_KEY",
       "model": "gemini-2.0-flash",
-      "description": "Google Gemini，超長上下文"
+      "description": "日常模型，輕量摘要與資料整理"
     }
   ]
 }
@@ -179,6 +209,18 @@ CLI 內建指令：
 | `authorized_users` | 允許使用的 Telegram 用戶 ID 列表（空陣列 = 不限制） |
 | `max_tokens` | 每次回覆最大 token 數（預設 4096） |
 | `max_history` | 保留的對話輪數（預設 50） |
+| `model_roles` | 三層角色對應 `models` 陣列索引：`primary`（主力）、`fast`（快速）、`daily`（日常） |
+| `spawn_routing` | 子代理任務類型 → 使用哪一層：`reading` / `writing` / `review` / `advice` / `debug` / `general` 對應 `primary` / `fast` / `daily` |
+
+### 三層模型與子代理路由
+
+- **主力（primary）**：主對話、任務規劃、撰寫程式、除錯、Code Review 等高強度子任務。
+- **快速（fast）**：建議、一般查詢、中間整合等中量子任務。
+- **日常（daily）**：讀檔摘要、格式轉換、輕量整理。
+
+`spawn_agent` 會依 `task_role`（或 `auto` 時依任務文字）對照 `spawn_routing`，再經 `model_roles` 選出實際模型。**無需**每次詢問用戶要哪個模型；僅在用戶明確指定時才傳入 `model_index`。完整鍵值請見 `config.example.json`。
+
+**本地 LLM（Ollama 等）**：可在 `models` 中配置多筆相同 `base_url`、不同 `model` 名稱（例如 32B / 7B），分別對應主力／快速／日常；並行子代理時請留意本機 VRAM 與 Ollama 載入策略。
 
 ---
 
@@ -313,7 +355,7 @@ HydraBot 提供三個層次的隔離，對應不同使用情境：
 在單一專案中，需要多個 AI 模型**並行處理**不同子任務時，使用 `spawn_agent` 工具（由 LLM 自行呼叫）。
 
 - 以執行緒方式在同一程序內後台執行
-- 每個子任務可指定不同的 AI 模型
+- 每個子任務依 **任務類型** 自動對應到主力／快速／日常其中一層（可在 `spawn_routing` 調整）
 - 完成後自動推送結果
 - **適合：** 大型文書與資料蒐集專案——網路查詢、寫作、審查同時進行
 
@@ -358,7 +400,7 @@ HydraBot 提供三個層次的隔離，對應不同使用情境：
 | `create_tool` | 撰寫並熱載入新工具（自我擴展核心） |
 | `log_experience` | 把成功/失敗/洞見記錄到 `experience_log.json` |
 | `recall_experience` | 依語意檢索相似過往經驗，輔助排錯與複用解法 |
-| `spawn_agent` | 派出命名背景任務並行執行；支援指定模型 |
+| `spawn_agent` | 並行子代理；依 `task_role` 自動選主力／快速／日常，可選 `model_index` 覆寫 |
 | `schedule_notification` | 建立定時通知排程 |
 | `list_notifications` | 列出當前會話的所有排程 |
 | `cancel_notification` | 取消指定排程 |

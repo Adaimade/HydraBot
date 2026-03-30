@@ -6,6 +6,7 @@ Every tool returns a string that will be shown to the LLM.
 """
 
 import io
+import os
 import sys
 import json
 import subprocess
@@ -554,6 +555,61 @@ def get_builtin_tools(agent: "Agent") -> list:
         return "\n".join(lines)
 
     # ─────────────────────────────────────────────────────────────
+    # code1_rag_query — HydraBot-code1.0 本地 Chroma + Ollama RAG
+    # ─────────────────────────────────────────────────────────────
+
+    def code1_rag_query(question: str) -> str:
+        """查詢本機 HydraBot-code1.0 專案的向量庫（需 config 或環境變數指定路徑）。"""
+        cfg = agent.config or {}
+        root = (cfg.get("hydrabot_code1_root") or "").strip()
+        if not root:
+            root = os.environ.get("HYDRABOT_RAG_ROOT", "").strip()
+        if not root:
+            return (
+                "❌ 未設定本地 RAG 專案路徑。\n"
+                "請在 config.json 設定 `hydrabot_code1_root` 為 HydraBot-code1.0 專案**根目錄**絕對路徑，\n"
+                "或設定環境變數 `HYDRABOT_RAG_ROOT`。\n"
+                "並在虛擬環境內安裝：`pip install -r requirements_rag.txt`（本倉庫）。"
+            )
+        root_path = Path(root).expanduser().resolve()
+        if not root_path.is_dir():
+            return f"❌ 路徑不存在: {root_path}"
+        rag_py = root_path / "src" / "rag_core.py"
+        if not rag_py.is_file():
+            return f"❌ 找不到 {rag_py}（請確認為 HydraBot-code1.0 專案根目錄）"
+
+        os.environ["HYDRABOT_RAG_ROOT"] = str(root_path)
+        src = str(root_path / "src")
+        if src not in sys.path:
+            sys.path.insert(0, src)
+
+        try:
+            for mod_name in ("config", "rag_core"):
+                if mod_name in sys.modules:
+                    m = sys.modules[mod_name]
+                    mf = getattr(m, "__file__", None)
+                    if mf and not str(Path(mf).resolve()).startswith(str(root_path)):
+                        del sys.modules[mod_name]
+
+            from rag_core import query_rag
+
+            r = query_rag(question)
+            lines = [f"📚 **code1.0 本地 RAG**\n\n{r.answer}"]
+            if r.sources:
+                lines.append("\n**來源**")
+                for i, s in enumerate(r.sources, 1):
+                    lines.append(f"{i}. {s}")
+            return "\n".join(lines)
+        except Exception:
+            return (
+                "❌ RAG 查詢失敗。請確認：\n"
+                "· 已 `pip install -r requirements_rag.txt`\n"
+                "· Ollama 可連線，且已 `ollama pull` 所需模型\n"
+                "· 已在 code1.0 專案執行 `python src/ingest.py`\n\n"
+                f"```\n{traceback.format_exc()}\n```"
+            )
+
+    # ─────────────────────────────────────────────────────────────
     # Schemas
     # ─────────────────────────────────────────────────────────────
 
@@ -857,4 +913,23 @@ def get_builtin_tools(agent: "Agent") -> list:
                 "required": [],
             },
         }, recall_experience),
+
+        ("code1_rag_query", {
+            "name": "code1_rag_query",
+            "description": (
+                "查詢本機 **HydraBot-code1.0** 專案的 Chroma 向量庫（Ollama + RAG）。\n"
+                "用於對照專案規格、驗收條件、架構原則等「已索引」文件。\n"
+                "使用前需於 config.json 設定 `hydrabot_code1_root` 並安裝依賴（requirements_rag.txt）。"
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "要以向量庫回答的問題（自然語言）",
+                    },
+                },
+                "required": ["question"],
+            },
+        }, code1_rag_query),
     ]

@@ -15,8 +15,8 @@
 
 | Feature | Description |
 |---------|-------------|
-| 🤖 **Multi-Model Support** | Configure multiple AI models simultaneously (primary + fast + backup), switchable mid-conversation |
-| ⚡ **Parallel Sub-Agents** | `spawn_agent` — delegate subtasks to other models, running in parallel without blocking |
+| 🤖 **Three-tier model roles** | **Primary / fast / daily** map to `models` indices; set at install time; switch mid-chat with `/models` |
+| ⚡ **Sub-agent auto-routing** | `spawn_agent` routes by task type to the right tier; primary plans and integrates—users need not pick a model per subtask |
 | 🔧 **Self-Expansion** | `create_tool` — the LLM can write and hot-reload new tools at runtime |
 | 🖥️ **Multi-Channel Interface** | Supports Telegram, Discord, and local CLI mode (`python main.py --cli`) |
 | 💻 **Local Execution** | Python / Shell code runs directly on your machine with full filesystem access |
@@ -42,7 +42,7 @@ The installer will automatically:
 1. Detect and install Python 3.10+
 2. Clone / download core files
 3. Create a Python virtual environment and install dependencies
-4. Interactively prompt for your Telegram Token and AI API Key
+4. Interactively prompt for your Telegram Token, AI API Key, and **primary / fast / daily** model slots (cloud or local LLM)
 5. Set up the global `hydrabot` command (works from anywhere)
 
 ### Windows (PowerShell)
@@ -79,6 +79,22 @@ copy config.example.json config.json
 ```
 
 > ℹ️ **PATH Setup**: After manual installation, either add the installation directory to your system PATH (so `hydrabot` works from anywhere), or always run commands from the installation directory. See [QUICKSTART.md](QUICKSTART.md) for detailed PATH setup instructions.
+
+### Optional: Connect a local HydraBot-code1.0 vector store
+
+If you use a sibling project such as **HydraBot-code1.0** (Chroma + Ollama RAG), install extra deps in the **same venv** and set the project root so HydraBot can call the built-in tool **`code1_rag_query`**:
+
+```bash
+pip install -r requirements_rag.txt
+```
+
+In `config.json`:
+
+```json
+"hydrabot_code1_root": "/absolute/path/to/HydraBot-code1.0"
+```
+
+Ensure that project has been indexed (`python src/ingest.py`) and Ollama is reachable.
 
 ---
 
@@ -136,27 +152,41 @@ Copy `config.example.json` and modify:
   "max_tokens": 4096,
   "max_history": 50,
 
+  "model_roles": {
+    "primary": 0,
+    "fast": 1,
+    "daily": 2
+  },
+  "spawn_routing": {
+    "reading": "daily",
+    "writing": "primary",
+    "review": "primary",
+    "advice": "fast",
+    "debug": "primary",
+    "general": "fast"
+  },
+
   "models": [
     {
       "name": "Primary Claude Sonnet",
       "provider": "anthropic",
       "api_key": "sk-ant-...",
       "model": "claude-sonnet-4-6",
-      "description": "Balanced performance, main conversation model"
+      "description": "Primary tier: reasoning and code-heavy work"
     },
     {
       "name": "Fast Claude Haiku",
       "provider": "anthropic",
       "api_key": "sk-ant-...",
       "model": "claude-haiku-3-5",
-      "description": "Lightweight and fast, ideal for parallel sub-agent tasks"
+      "description": "Fast tier: advice and medium subtasks"
     },
     {
       "name": "Gemini 2.0 Flash",
       "provider": "google",
       "api_key": "YOUR_GOOGLE_AI_KEY",
       "model": "gemini-2.0-flash",
-      "description": "Google Gemini with ultra-long context"
+      "description": "Daily tier: light summarization and formatting"
     }
   ]
 }
@@ -179,6 +209,18 @@ Copy `config.example.json` and modify:
 | `authorized_users` | List of authorized Telegram user IDs (empty array = no restriction) |
 | `max_tokens` | Max tokens per response (default 4096) |
 | `max_history` | Number of conversation turns to retain (default 50) |
+| `model_roles` | Maps tiers to `models` indices: `primary`, `fast`, `daily` |
+| `spawn_routing` | Maps sub-agent task types (`reading`, `writing`, `review`, `advice`, `debug`, `general`) to a tier name |
+
+### Three-tier models and sub-agent routing
+
+- **Primary**: Main chat, planning, coding, debugging, code review.
+- **Fast**: Advice, general Q&A, intermediate integration.
+- **Daily**: Read/summarize files, light formatting and cleanup.
+
+`spawn_agent` uses `task_role` (or infers from the task when `auto`) with `spawn_routing`, then resolves the real model via `model_roles`. Users do **not** need to pick a model for every subtask unless they explicitly set `model_index`. See `config.example.json` for the full schema.
+
+**Local LLMs (Ollama, etc.)**: You can list multiple entries with the same `base_url` and different `model` names (e.g. 32B vs 7B) for primary/fast/daily. Watch VRAM and how many models Ollama keeps loaded when running parallel sub-agents.
 
 ---
 
@@ -313,7 +355,7 @@ Because each instance runs from its own directory, there is **no git or file con
 Use the **`spawn_agent` tool** (called by the LLM) when one project needs multiple AI models working in parallel on different subtasks.
 
 - Runs as background threads within the same process
-- Each task can use a different AI model
+- Each subtask is routed to **primary / fast / daily** by task type (`spawn_routing`), unless the user overrides `model_index`
 - Results are pushed back automatically when done
 - **Best for:** large document or research projects — web research, writing, and review running simultaneously
 
@@ -358,7 +400,7 @@ One sub-agent Bot (project workspace)
 | `create_tool` | Write and hot-reload a new tool (core of self-expansion) |
 | `log_experience` | Save a structured success/failure/insight record into `experience_log.json` |
 | `recall_experience` | Retrieve semantically similar past records for troubleshooting/reuse |
-| `spawn_agent` | Spawn a named background task with selectable model (parallel execution) |
+| `spawn_agent` | Parallel sub-agents; auto-pick tier via `task_role`, optional `model_index` override |
 | `schedule_notification` | Create a scheduled notification |
 | `list_notifications` | List all schedules for the current session |
 | `cancel_notification` | Cancel a specific schedule |

@@ -1,6 +1,9 @@
 {
   "_註解": "複製此檔案為 config.json 並填入你的憑證",
 
+  "_註解_code1_rag": "本地 RAG：HydraBot-code1.0 專案根目錄絕對路徑；留空則停用 code1_rag_query。需 pip install -r requirements_rag.txt 且 Ollama 可用",
+  "hydrabot_code1_root": "",
+
   "telegram_token": "YOUR_TELEGRAM_BOT_TOKEN",
   "_註解_Discord": "可與 Telegram 並用；至少一個平台 token 有效即可。需 pip 安裝 discord.py，並在 Developer Portal 開啟 Message Content Intent。",
   "discord_token": "",
