@@ -106,7 +106,7 @@ class Handler(BaseHTTPRequestHandler):
       <div class="lbl">模型組數</div>
     </div>
     <div class="stat">
-      <div class="val">{tool_count + 17}</div>
+      <div class="val">{tool_count + 19}</div>
       <div class="lbl">工具總數</div>
     </div>
     <div class="stat">

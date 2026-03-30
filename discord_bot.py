@@ -102,7 +102,11 @@ class HydraDiscordClient(discord.Client):
         loop = asyncio.get_running_loop()
         self.pool._loop = loop
         self.pool._send_func = self._deliver_to_session
-        self.pool.scheduler.start(loop, self.pool._send_func)
+        self.pool.scheduler.start(
+            loop,
+            self.pool._send_func,
+            task_runner=lambda sid, text: self.pool.chat(sid, text),
+        )
         active = sum(1 for j in self.pool.scheduler._jobs.values() if j.active)
         print(f"✅ Discord 已登入：{self.user}（伺服器數 {len(self.guilds)}）")
         print(f"   排程器作用中 job：{active}")

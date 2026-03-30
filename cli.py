@@ -8,7 +8,9 @@ HydraBot — 終端機互動模式（CLI）
 
 from __future__ import annotations
 
+import asyncio
 import sys
+import threading
 import traceback
 from typing import TYPE_CHECKING
 
@@ -25,6 +27,25 @@ def run_cli(config: dict) -> None:
     from agent import AgentPool
 
     pool: AgentPool = AgentPool(config)
+
+    loop = asyncio.new_event_loop()
+
+    def _loop_runner():
+        asyncio.set_event_loop(loop)
+        loop.run_forever()
+
+    threading.Thread(target=_loop_runner, name="hydra-cli-async", daemon=True).start()
+
+    async def cli_send(session_id: tuple, text: str) -> None:
+        print(f"\n[推送]\n{text}\n")
+
+    pool._loop = loop
+    pool._send_func = cli_send
+    pool.scheduler.start(
+        loop,
+        cli_send,
+        task_runner=lambda sid, text: pool.chat(sid, text),
+    )
 
     print(
         "\n"
@@ -78,6 +99,10 @@ def run_cli(config: dict) -> None:
                 print(f"❌ 錯誤: {e}\n```\n{traceback.format_exc()}\n```\n")
 
     finally:
+        try:
+            loop.call_soon_threadsafe(loop.stop)
+        except Exception:
+            pass
         try:
             pool.shutdown()
         except Exception:

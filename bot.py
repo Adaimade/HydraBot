@@ -961,7 +961,11 @@ class TelegramBot:
         self.pool._send_func = self._send_to_user
 
         # Start the notification scheduler
-        self.pool.scheduler.start(loop, self._send_to_user)
+        self.pool.scheduler.start(
+            loop,
+            self._send_to_user,
+            task_runner=lambda sid, text: self.pool.chat(sid, text),
+        )
 
         # Start all registered sub-agent bots
         if self.sub_agents:

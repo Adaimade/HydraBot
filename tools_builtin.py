@@ -160,8 +160,13 @@ def get_builtin_tools(agent: "Agent") -> list:
 
     # Names injected per-session (not in agent.tools) that must not be overwritten
     _SESSION_TOOL_NAMES = {
-        "spawn_agent", "schedule_notification",
-        "list_notifications", "cancel_notification", "report_progress",
+        "spawn_agent",
+        "run_pipeline",
+        "schedule_notification",
+        "schedule_task",
+        "list_notifications",
+        "cancel_notification",
+        "report_progress",
     }
 
     def create_tool(tool_name: str, tool_code: str) -> str:

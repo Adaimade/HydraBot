@@ -25,6 +25,7 @@ import uuid
 import threading
 import asyncio
 import logging
+import traceback
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Optional, Union
@@ -98,6 +99,7 @@ class ScheduledJob:
         fire_at: datetime,          # UTC
         repeat: Optional[Union[str, int]] = None,
         label: str = "",
+        kind: str = "notify",
     ):
         self.job_id     = job_id
         self.session_id = session_id   # (chat_id, thread_id)
@@ -105,6 +107,8 @@ class ScheduledJob:
         self.fire_at    = fire_at      # UTC datetime，下次觸發時間
         self.repeat     = repeat       # None | str | int(seconds)
         self.label      = label
+        # notify = 到點推送固定文字；llm_task = 到點以 message 為任務描述呼叫 LLM，結果再推送
+        self.kind       = kind if kind in ("notify", "llm_task") else "notify"
         self.active     = True
         self.created_at = utcnow()
 
@@ -118,6 +122,7 @@ class ScheduledJob:
             "fire_at":    self.fire_at.isoformat(),
             "repeat":     self.repeat,
             "label":      self.label,
+            "kind":       self.kind,
             "active":     self.active,
             "created_at": self.created_at.isoformat(),
         }
@@ -132,6 +137,7 @@ class ScheduledJob:
             fire_at    = datetime.fromisoformat(d["fire_at"]),
             repeat     = d.get("repeat"),
             label      = d.get("label", ""),
+            kind       = d.get("kind", "notify"),
         )
         job.active = d.get("active", True)
         if "created_at" in d:
@@ -148,10 +154,11 @@ class ScheduledJob:
         label_str  = f"[{self.label}] " if self.label else ""
         state_icon = "✅" if self.active else "❌"
         short_msg  = self.message[:60] + ("…" if len(self.message) > 60 else "")
+        kind_tag = "任務" if self.kind == "llm_task" else "通知"
         return (
-            f"{state_icon} `{self.job_id}`  {label_str}\n"
+            f"{state_icon} `{self.job_id}`  {label_str}[{kind_tag}]\n"
             f"   下次觸發: `{local_dt.strftime('%Y-%m-%d %H:%M:%S')} ({tz_str})`  重複: {repeat_str}\n"
-            f"   訊息: {short_msg}"
+            f"   內容: {short_msg}"
         )
 
 
@@ -177,6 +184,8 @@ class NotificationScheduler:
         self._lock        = threading.Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._send_func: Optional[Callable] = None
+        # (session_id, task_text) -> str  同步；排程觸發 llm_task 時呼叫
+        self._task_runner: Optional[Callable[[tuple, str], str]] = None
         self._stop_event  = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._load_jobs()
@@ -185,10 +194,16 @@ class NotificationScheduler:
     # Lifecycle
     # ─────────────────────────────────────────────
 
-    def start(self, loop: asyncio.AbstractEventLoop, send_func: Callable):
+    def start(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        send_func: Callable,
+        task_runner: Optional[Callable[[tuple, str], str]] = None,
+    ):
         """啟動排程背景執行緒。在 bot._post_init 裡呼叫。"""
         self._loop      = loop
         self._send_func = send_func
+        self._task_runner = task_runner
         self._stop_event.clear()
         self._thread = threading.Thread(
             target=self._run_loop,
@@ -213,10 +228,11 @@ class NotificationScheduler:
         fire_at: datetime,              # must be UTC
         repeat: Optional[Union[str, int]] = None,
         label: str = "",
+        kind: str = "notify",
     ) -> str:
-        """新增定時通知，回傳 job_id。fire_at 必須是 UTC。"""
+        """新增定時通知或定時 LLM 任務，回傳 job_id。fire_at 必須是 UTC。"""
         job_id = f"sched_{uuid.uuid4().hex[:8]}"
-        job    = ScheduledJob(job_id, session_id, message, fire_at, repeat, label)
+        job    = ScheduledJob(job_id, session_id, message, fire_at, repeat, label, kind=kind)
         with self._lock:
             self._jobs[job_id] = job
         self._save_jobs()
@@ -307,13 +323,40 @@ class NotificationScheduler:
     def _fire_job(self, job: ScheduledJob):
         """觸發一個通知並決定是否重新排程。"""
         label_str = f"[{job.label}] " if job.label else ""
-        msg = f"⏰ **定時通知** {label_str}\n\n{job.message}"
 
-        if self._send_func and self._loop:
+        if job.kind == "llm_task":
+            if not self._task_runner:
+                logger.warning("llm_task job %s dropped: no task_runner", job.job_id)
+                with self._lock:
+                    job.active = False
+                self._save_jobs()
+                return
+            if not self._send_func or not self._loop:
+                logger.warning("llm_task job %s dropped: send_func/loop not wired", job.job_id)
+                with self._lock:
+                    job.active = False
+                self._save_jobs()
+                return
+            try:
+                result = self._task_runner(job.session_id, job.message)
+                msg = f"⏰ **排程任務完成** {label_str}\n\n{result}"
+            except Exception as e:
+                msg = (
+                    f"❌ **排程任務失敗** {label_str}\n\n"
+                    f"{e}\n```\n{traceback.format_exc()}\n```"
+                )
             asyncio.run_coroutine_threadsafe(
                 self._send_func(job.session_id, msg),
                 self._loop,
             )
+        else:
+            msg = f"⏰ **定時通知** {label_str}\n\n{job.message}"
+
+            if self._send_func and self._loop:
+                asyncio.run_coroutine_threadsafe(
+                    self._send_func(job.session_id, msg),
+                    self._loop,
+                )
 
         # 更新排程或停用
         with self._lock:

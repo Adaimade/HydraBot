@@ -5,6 +5,8 @@ Manages multiple model clients, shared tools, and parallel sub-agent spawning.
 Includes: scheduled notifications and real-time task progress reporting.
 """
 
+from __future__ import annotations
+
 import json
 import asyncio
 import importlib.util
@@ -21,6 +23,19 @@ from learning import ExperienceLog, is_likely_failure
 
 # Maximum number of tool-call iterations per agent loop turn
 MAX_TOOL_CALLS = 30
+
+
+def _safe_step_key(name: str, fallback: str) -> str:
+    n = (name or "").strip()
+    if not n:
+        return fallback
+    # Keep keys stable and safe for dict addressing / template replacement
+    out = []
+    for ch in n:
+        if ch.isalnum() or ch in ("_", "-", ".", " "):
+            out.append(ch)
+    key = "".join(out).strip().replace(" ", "_")
+    return key or fallback
 
 # ─────────────────────────────────────────────────────────────
 # Internal single-model client
@@ -558,6 +573,225 @@ class AgentPool:
             f"⏳ 後台運行中，完成後自動推送結果 📨"
         )
 
+    # ─────────────────────────────────────────────
+    # Pipeline runner (multi-step orchestration)
+    # ─────────────────────────────────────────────
+
+    def run_pipeline(
+        self,
+        session_id: tuple,
+        steps: list[dict],
+        *,
+        parallel: bool = True,
+        include_outputs_in_prompt: bool = True,
+    ) -> str:
+        """Run a multi-step pipeline using tiered sub-agents and collect results.
+
+        steps: list of dict
+          required: task (str)
+          optional: name (str), task_role (str), depends_on (list[str])
+
+        The pipeline runs in waves:
+          - steps with no deps run first (optionally in parallel)
+          - steps with deps run after their deps finish
+        Each step runs in an isolated sub-agent context (session_id=None).
+        """
+        if not isinstance(steps, list) or not steps:
+            return "❌ steps 必須是非空 list"
+
+        # Normalize and assign stable keys
+        norm: list[dict[str, Any]] = []
+        name_to_key: dict[str, str] = {}
+        key_set: set[str] = set()
+        for i, raw in enumerate(steps):
+            if not isinstance(raw, dict):
+                return f"❌ steps[{i}] 必須是 dict"
+            task = str(raw.get("task", "")).strip()
+            if not task:
+                return f"❌ steps[{i}] 缺少 task"
+            name = str(raw.get("name", "")).strip()
+            key = _safe_step_key(name, fallback=f"step_{i+1}")
+            # Ensure uniqueness
+            base = key
+            j = 2
+            while key in key_set:
+                key = f"{base}_{j}"
+                j += 1
+            key_set.add(key)
+            depends = raw.get("depends_on", [])
+            if depends is None:
+                depends = []
+            if isinstance(depends, str):
+                depends = [depends]
+            if not isinstance(depends, list):
+                return f"❌ steps[{i}].depends_on 必須是 list[str]"
+            depends = [str(x).strip() for x in depends if str(x).strip()]
+            role = str(raw.get("task_role", "auto")).strip() or "auto"
+            if name:
+                # Map both raw name and safe key form to the resolved key
+                name_to_key.setdefault(name, key)
+                name_to_key.setdefault(_safe_step_key(name, fallback=name), key)
+            norm.append(
+                {
+                    "key": key,
+                    "name": name or key,
+                    "task": task,
+                    "task_role": role,
+                    "depends_on": depends,
+                }
+            )
+
+        # Resolve depends_on entries: allow referencing by step key OR step name
+        known = {s["key"] for s in norm}
+        for s in norm:
+            resolved: list[str] = []
+            for d in s["depends_on"]:
+                if d in known:
+                    resolved.append(d)
+                    continue
+                if d in name_to_key:
+                    resolved.append(name_to_key[d])
+                    continue
+                # Also try safe-key normalization
+                sk = _safe_step_key(d, fallback=d)
+                if sk in known:
+                    resolved.append(sk)
+                    continue
+                if sk in name_to_key:
+                    resolved.append(name_to_key[sk])
+                    continue
+                resolved.append(d)
+            s["depends_on"] = resolved
+
+        # Validate dependencies reference known keys
+        for s in norm:
+            bad = [d for d in s["depends_on"] if d not in known]
+            if bad:
+                return (
+                    f"❌ pipeline 步驟 `{s['key']}` 依賴不存在的 step: {', '.join(bad)}\n"
+                    f"可用 steps: {', '.join(sorted(known))}"
+                )
+
+        # Step outputs
+        outputs: dict[str, str] = {}
+        statuses: dict[str, str] = {}
+
+        def _push(text: str):
+            if self._send_func and self._loop:
+                asyncio.run_coroutine_threadsafe(
+                    self._send_func(session_id, text), self._loop
+                )
+
+        def _render_task(template: str, dep_keys: list[str]) -> str:
+            # Very small templating: {{step_key}} gets replaced with that output.
+            rendered = template
+            for k in dep_keys:
+                rendered = rendered.replace(f"{{{{{k}}}}}", outputs.get(k, ""))
+            if include_outputs_in_prompt and dep_keys:
+                dep_pack = "\n\n".join(
+                    f"[{k}]\n{outputs.get(k, '')}".strip()[:4000] for k in dep_keys
+                )
+                rendered = (
+                    f"{rendered}\n\n"
+                    f"---\n"
+                    f"以下是前置步驟輸出（供你參考整合）：\n{dep_pack}\n"
+                    f"---"
+                )
+            return rendered
+
+        def _run_step(step: dict[str, Any]) -> tuple[str, str, str]:
+            key = step["key"]
+            name = step["name"]
+            deps = step["depends_on"]
+            task = _render_task(step["task"], deps)
+            idx, tier, note = self.resolve_spawn_model(task, step["task_role"], None)
+            client = self.get_client(idx)
+            sub_tools = dict(self.tools)  # no spawn_agent recursion
+
+            # Provide progress hook inside a pipeline step
+            def report_progress(message: str) -> str:
+                _push(
+                    f"📊 **Pipeline/{name}** 進度更新\n"
+                    f"模型: {client.name}（{note}）\n\n"
+                    f"{message}"
+                )
+                return "✅ 進度已推送給用戶"
+
+            sub_tools["report_progress"] = (
+                {
+                    "name": "report_progress",
+                    "description": "將目前任務進度即時推送給用戶（pipeline step）。",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"message": {"type": "string"}},
+                        "required": ["message"],
+                    },
+                },
+                report_progress,
+            )
+
+            try:
+                _push(f"⏳ **Pipeline/{name}** 開始\n模型: {client.name}（{note}）")
+                if client.provider == "anthropic":
+                    result = self._anthropic_loop(
+                        client,
+                        [{"role": "user", "content": task}],
+                        sub_tools,
+                        session_id=None,
+                    )
+                else:
+                    result = self._openai_loop(
+                        client,
+                        [{"role": "user", "content": task}],
+                        sub_tools,
+                        session_id=None,
+                    )
+                return key, "done", result
+            except Exception as e:
+                err = f"❌ Pipeline step 失敗: {e}\n```\n{traceback.format_exc()}\n```"
+                return key, "error", err
+
+        # Run in dependency waves
+        pending = {s["key"]: s for s in norm}
+        while pending:
+            ready = [
+                s for s in pending.values()
+                if all(d in outputs for d in s["depends_on"])
+            ]
+            if not ready:
+                # Cycle or missing deps
+                left = ", ".join(sorted(pending.keys()))
+                return f"❌ pipeline 依賴無法滿足（可能循環依賴）：{left}"
+
+            if parallel and len(ready) > 1:
+                futs = [
+                    self._executor.submit(_run_step, s)
+                    for s in ready
+                ]
+                for f in futs:
+                    key, st, out = f.result()
+                    statuses[key] = st
+                    outputs[key] = out
+                    pending.pop(key, None)
+            else:
+                for s in ready:
+                    key, st, out = _run_step(s)
+                    statuses[key] = st
+                    outputs[key] = out
+                    pending.pop(key, None)
+
+        # Summarize for the caller (LLM)
+        lines = ["✅ Pipeline 已完成\n"]
+        for s in norm:
+            key = s["key"]
+            name = s["name"]
+            st = statuses.get(key, "unknown")
+            icon = "✅" if st == "done" else ("❌" if st == "error" else "❓")
+            snippet = (outputs.get(key, "") or "").strip()
+            snippet = snippet[:500] + ("…" if len(snippet) > 500 else "")
+            lines.append(f"{icon} **{name}** (`{key}`)\n{snippet}\n")
+        return "\n".join(lines).strip()
+
     def list_tasks_info(self) -> str:
         with self._tasks_lock:
             tasks_snapshot = dict(self.running_tasks)
@@ -682,6 +916,60 @@ class AgentPool:
             },
         }, spawn_agent)
 
+        # ── run_pipeline ─────────────────────────────────────────
+        def run_pipeline(
+            steps: list,
+            parallel: bool = True,
+        ) -> str:
+            return pool.run_pipeline(session_id, steps, parallel=bool(parallel))
+
+        tools["run_pipeline"] = ({
+            "name": "run_pipeline",
+            "description": (
+                "執行多步驟 Pipeline：主力負責規劃與整合，步驟依 task_role 自動路由到主力/快速/日常層級並行或串行執行。\n"
+                "steps 格式（list[dict]）：\n"
+                "  - name: 步驟名稱（可省略）\n"
+                "  - task: 此步驟任務（必填）\n"
+                "  - task_role: auto/reading/writing/review/advice/debug/general（選填，預設 auto）\n"
+                "  - depends_on: 依賴的前置步驟（選填；可寫 step key 或 step name）\n"
+                "在需要「讀檔→寫程式→審查/除錯」這類常見流程時，優先使用 run_pipeline 以降低使用門檻。\n"
+                "注意：如用戶明確要求指定模型索引，才使用 spawn_agent 的 model_index 覆寫；否則一律交由路由表自動選擇。"
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "steps": {
+                        "type": "array",
+                        "description": "Pipeline 步驟列表（list[dict]）",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string"},
+                                "task": {"type": "string"},
+                                "task_role": {
+                                    "type": "string",
+                                    "enum": [
+                                        "auto", "reading", "writing", "review",
+                                        "advice", "debug", "general",
+                                    ],
+                                },
+                                "depends_on": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                },
+                            },
+                            "required": ["task"],
+                        },
+                    },
+                    "parallel": {
+                        "type": "boolean",
+                        "description": "同一波可執行步驟是否並行（預設 true）",
+                    },
+                },
+                "required": ["steps"],
+            },
+        }, run_pipeline)
+
         # ── schedule_notification ──────────────────────────────────
         repeat_keys = "、".join(REPEAT_INTERVALS.keys())
 
@@ -754,6 +1042,77 @@ class AgentPool:
                 "required": ["message", "when"],
             },
         }, schedule_notification)
+
+        def schedule_task(
+            task_description: str,
+            when: str,
+            repeat: str = None,
+            label: str = "",
+        ) -> str:
+            """到點由本機 Agent 執行任務描述（等同於對該 session 發一則 user 訊息），結果推送給用戶。"""
+            from scheduler import utc_to_local, tz_label
+            tz_offset = pool.get_timezone(session_id) or 0
+            try:
+                fire_at_utc = parse_fire_at(when, tz_offset_hours=tz_offset)
+            except Exception as e:
+                return f"❌ 無法解析時間 `{when}`: {e}"
+
+            if repeat and repeat not in REPEAT_INTERVALS and not str(repeat).isdigit():
+                return (
+                    f"❌ 無效的 repeat 值: `{repeat}`\n"
+                    f"可用: {repeat_keys}，或整數秒數"
+                )
+
+            job_id = pool.scheduler.add_job(
+                session_id=session_id,
+                message=task_description,
+                fire_at=fire_at_utc,
+                repeat=repeat or None,
+                label=label,
+                kind="llm_task",
+            )
+            repeat_str  = f"，重複: **{repeat}**" if repeat else ""
+            local_dt    = utc_to_local(fire_at_utc, tz_offset)
+            tz_str      = tz_label(tz_offset)
+            short       = (task_description[:80] + "…") if len(task_description) > 80 else task_description
+            return (
+                f"✅ 排程任務已建立 `{job_id}`{repeat_str}\n"
+                f"觸發時間: `{local_dt.strftime('%Y-%m-%d %H:%M:%S')} ({tz_str})`\n"
+                f"任務: {short}\n"
+                f"到時會由模型執行並推送結果（非固定文字通知）。"
+            )
+
+        tools["schedule_task"] = ({
+            "name": "schedule_task",
+            "description": (
+                "排程一個**動態任務**：到點後由模型閱讀 task_description 並實際執行（可用工具），完成後把結果推送給用戶。\n"
+                "與 schedule_notification 不同：後者只推送固定文字；本工具適合「每天早上做日報、週期檢查後回覆」等。\n"
+                "時間格式與 schedule_notification 相同；**優先建議相對時間**（+Nm/+Nh/+Nd）以減少年份錯誤。\n"
+                f"repeat: {repeat_keys} 或整數秒數。"
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "task_description": {
+                        "type": "string",
+                        "description": "到點時要完成的任務說明（給模型執行，請寫清楚目標與所需輸出格式）",
+                    },
+                    "when": {
+                        "type": "string",
+                        "description": "觸發時間：相對 +Nm/+Nh/+Nd 或 ISO（用戶本地時間）",
+                    },
+                    "repeat": {
+                        "type": "string",
+                        "description": f"循環：{repeat_keys} 或整數秒；不填 = 執行一次",
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "顯示用標籤（例如「每日早報」）",
+                    },
+                },
+                "required": ["task_description", "when"],
+            },
+        }, schedule_task)
 
         # ── list_notifications ─────────────────────────────────────
         def list_notifications() -> str:
@@ -942,7 +1301,8 @@ class AgentPool:
     def _system_prompt(self, session_id) -> str:
         tool_list = (
             ", ".join(sorted(self.tools.keys()))
-            + ", spawn_agent, schedule_notification, list_notifications, cancel_notification"
+            + ", spawn_agent, run_pipeline, schedule_notification, schedule_task, "
+            + "list_notifications, cancel_notification"
         )
 
         if session_id is not None:
@@ -1015,11 +1375,23 @@ class AgentPool:
 - **不要**為每個子任務詢問用戶要哪個模型；只有在用戶**明確要求**時才填 `model_index`
 - 子代理完成後結果自動推送，你可在最後統整所有子代理結果
 
+## Pipeline 最佳實踐（推薦）
+對「讀取/蒐集 → 撰寫/實作 → 審查/除錯 → 最終整合」這類常見流程，優先使用 `run_pipeline` 來降低使用門檻：
+
+範例：讀文件 → 實作 → 除錯
+- Step A（reading）：讀取相關檔案、摘要規格/現況
+- Step B（writing）：依 Step A 輸出實作程式或產出草稿
+- Step C（debug/review）：對 Step B 的結果做除錯或 Code Review
+主力最後統整 Step A/B/C 的輸出回覆用戶
+
+依賴關係：`depends_on` 可寫 step key 或 step name；在 task 中可用 `{{step_key}}` 引用前置輸出。
+
 ## 定時通知使用策略（務必遵守）
-- 用戶只要提到**提醒、通知、倒數、幾分鐘後叫我、每天／每週**等，**必須立刻呼叫** `schedule_notification` 建立排程。
-- **禁止**只回覆「好的我會提醒你」卻不呼叫工具——沒有呼叫就不會真的排程，用戶也不會收到 Telegram 通知。
+- **固定文字提醒**（到點只推播一段訊息）→ 呼叫 `schedule_notification`。
+- **到點要做事、查資料、跑工具、產出報告**（模型真的執行）→ 呼叫 `schedule_task`，並把任務描述寫清楚。
+- 用戶只要提到**提醒、通知、倒數、幾分鐘後叫我、每天／每週**等，**必須立刻呼叫**對應排程工具；**禁止**只口頭答應而不呼叫工具。
 - 成功建立後，把工具回傳的排程 ID 與觸發時間**原文轉述**給用戶，並可提醒用 `/notify` 查看列表。
-- when 格式: ISO 8601（用戶本地時間）或相對 `+Nm` / `+Nh` / `+Nd`（與時區無關）
+- when 格式: ISO 8601（用戶本地時間）或相對 `+Nm` / `+Nh` / `+Nd`（與時區無關）；**排程任務優先相對時間**，避免模型填錯年份。
 - 循環: repeat="daily" / "hourly" / "weekly" 等；只提醒一次則不填 repeat
 - 若用戶時區未設定，仍可用相對時間（+1m 等）排程；絕對時間建議先請用戶 `/timezone`
 
@@ -1029,7 +1401,7 @@ class AgentPool:
 ## 行為準則
 - 用繁體中文回覆（除非用戶使用其他語言）
 - 積極主動使用工具，不只給建議
-- 並行任務優先考慮 spawn_agent
+- 並行任務優先考慮 `run_pipeline` 或 `spawn_agent`
 - 高風險操作前先確認
 - 保持簡潔友善"""
 
@@ -1113,8 +1485,9 @@ class AgentPool:
             print(f"⚠️  Failed to save timezones.json: {e}")
 
     def list_tools_info(self) -> str:
-        # +4 for session-bound tools injected per-session
-        total = len(self.tools) + 4
+        # session-bound: spawn_agent, run_pipeline, schedule_notification, schedule_task,
+        # list_notifications, cancel_notification
+        total = len(self.tools) + 6
         lines = [f"📦 **可用工具** ({total} 個)\n"]
         for name, (schema, _) in sorted(self.tools.items()):
             desc = schema.get("description", "").split("\n")[0]
@@ -1122,7 +1495,9 @@ class AgentPool:
                 desc = desc[:77] + "..."
             lines.append(f"• `{name}`: {desc}")
         lines.append(f"• `spawn_agent`: 在後台啟動子代理並行處理任務，完成後自動推送結果")
-        lines.append(f"• `schedule_notification`: 排程定時通知，到時自動推送給用戶")
+        lines.append(f"• `run_pipeline`: 多步驟 Pipeline，依層級自動選模型並行/串行")
+        lines.append(f"• `schedule_notification`: 排程定時**固定文字**通知")
+        lines.append(f"• `schedule_task`: 排程到點由模型**執行任務**並推送結果")
         lines.append(f"• `list_notifications`: 列出目前會話的所有定時排程")
         lines.append(f"• `cancel_notification`: 取消一個定時排程")
         return "\n".join(lines)
