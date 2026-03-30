@@ -1,0 +1,16 @@
+name: Notify Adaimade to Rebuild
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Adaimade image rebuild
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.ADAIMADE_PAT }}
+          repository: Adaimade/Adaimade
+          event-type: hydrabot-updated
