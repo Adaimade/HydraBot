@@ -12,5 +12,5 @@ jobs:
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.ADAIMADE_PAT }}
-          repository: Adaimade/Adaimade
+          repository: Adaimade/Aimade-platform
           event-type: hydrabot-updated
