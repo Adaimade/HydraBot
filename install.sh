@@ -32,7 +32,7 @@ cat << 'BANNER'
 BANNER
 printf "${NC}"
 REMOTE_VER=$(curl -fsSL --max-time 10 "$REPO/VERSION" 2>/dev/null | tr -d '[:space:]') || REMOTE_VER="1.1.0"
-printf "${BOLD}  Self-expanding AI Assistant via Telegram  ${G}v${REMOTE_VER}${NC}\n"
+printf "${BOLD}  Self-expanding AI Assistant（Telegram / Discord） ${G}v${REMOTE_VER}${NC}\n"
 printf "${DIM}  https://github.com/Adaimade/HydraBot${NC}\n\n"
 
 # ── Risk Warning ──────────────────────────────────────────────
@@ -310,41 +310,115 @@ chmod +x "$INSTALL_DIR/scripts/update.sh" "$INSTALL_DIR/scripts/start.sh" "$INST
 echo ""
 
 # ══════════════════════════════════════════════════════════════
-# [4/6]  Telegram Bot 配置
+# [4/6]  訊息平台（Telegram / Discord）
 # ══════════════════════════════════════════════════════════════
-step "[4/6] Telegram Bot 設定"
-inf "前置步驟:"
-inf "  1. Telegram 搜尋 ${BOLD}@BotFather${NC}${C}，發送 /newbot，取得 Bot Token"
-inf "  2. Telegram 搜尋 ${BOLD}@userinfobot${NC}${C}，取得你的數字使用者 ID"
-echo ""
+step "[4/6] 訊息平台（Telegram / Discord）"
 
-# 先嘗試從環境變數讀取（用於 Zeabur / CI/CD / 容器部署）
-TG_TOKEN="${HB_TG_TOKEN:-}"
+# PLATFORM: 1=僅 Telegram, 2=僅 Discord, 3=兩者皆啟用
+# 優先順序：HB_PLATFORM → 由 HB_TG_TOKEN / HB_DC_TOKEN 推斷 → 互動選單
+PLATFORM=""
+if [[ -n "${HB_PLATFORM:-}" ]]; then
+    _hp=$(printf '%s' "$HB_PLATFORM" | tr '[:upper:]' '[:lower:]')
+    case "$_hp" in
+        1|tg|telegram) PLATFORM=1 ;;
+        2|dc|discord)  PLATFORM=2 ;;
+        3|both|all)    PLATFORM=3 ;;
+    esac
+    unset _hp
+fi
+if [[ -z "$PLATFORM" ]]; then
+    if [[ -n "${HB_TG_TOKEN:-}" && -n "${HB_DC_TOKEN:-}" ]]; then PLATFORM=3
+    elif [[ -n "${HB_TG_TOKEN:-}" ]]; then PLATFORM=1
+    elif [[ -n "${HB_DC_TOKEN:-}" ]]; then PLATFORM=2
+    fi
+fi
 
-if [[ -z "$TG_TOKEN" ]]; then
-    # 交互式輸入
-    while [[ -z "$TG_TOKEN" ]]; do
-        ask "Bot Token: "
-        read -r TG_TOKEN
-        TG_TOKEN="${TG_TOKEN// /}"
-        [[ -z "$TG_TOKEN" ]] && printf "  ${R}不能為空${NC}\n"
+if [[ -z "$PLATFORM" ]]; then
+    printf "  請選擇要啟用的平台：\n"
+    printf "    ${B}1${NC}) 僅 ${BOLD}Telegram${NC}\n"
+    printf "    ${B}2${NC}) 僅 ${BOLD}Discord${NC}\n"
+    printf "    ${B}3${NC}) ${BOLD}Telegram + Discord${NC}（並行）\n"
+    echo ""
+    while [[ -z "$PLATFORM" ]]; do
+        ask "選擇 [1/2/3，預設 1]: "
+        read -r _plat
+        _plat="${_plat:-1}"
+        case "$_plat" in
+            1|2|3) PLATFORM="$_plat" ;;
+            *) printf "  ${R}請輸入 1、2 或 3${NC}\n" ;;
+        esac
     done
-    ok "Token 已輸入"
+    ok "已選擇平台模式: $PLATFORM"
 else
-    ok "Token 已從環境變數讀取"
+    inf "平台模式: ${BOLD}$PLATFORM${NC}（來自環境變數或憑證推斷）"
+fi
+echo ""
+
+# ── Telegram（模式 1 或 3）──────────────────────────────────
+TG_TOKEN=""
+AUTH_USERS_RAW=""
+if [[ "$PLATFORM" == "1" || "$PLATFORM" == "3" ]]; then
+    inf "前置（Telegram）：${BOLD}@BotFather${NC} 取得 Bot Token；${BOLD}@userinfobot${NC} 取得使用者 ID"
+    echo ""
+    TG_TOKEN="${HB_TG_TOKEN:-}"
+    if [[ -z "$TG_TOKEN" ]]; then
+        while [[ -z "$TG_TOKEN" ]]; do
+            ask "Telegram Bot Token: "
+            read -r TG_TOKEN
+            TG_TOKEN="${TG_TOKEN// /}"
+            [[ -z "$TG_TOKEN" ]] && printf "  ${R}已選擇 Telegram，Token 不能為空${NC}\n"
+        done
+        ok "Telegram Token 已輸入"
+    else
+        ok "Telegram Token 已從環境變數讀取"
+    fi
+    echo ""
+    AUTH_USERS_RAW="${HB_AUTH_USERS:-}"
+    if [[ -z "$AUTH_USERS_RAW" ]]; then
+        ask "Telegram 授權使用者 ID（多個用逗號分隔，${Y}留空 = 允許所有人${NC}）: "
+        read -r AUTH_USERS_RAW
+    fi
+    AUTH_USERS_RAW="${AUTH_USERS_RAW// /}"
+    [[ -z "$AUTH_USERS_RAW" ]] && warn "未設定 Telegram 授權使用者，所有人均可使用此 Bot！"
+    echo ""
 fi
 
-echo ""
-# 先嘗試從環境變數讀取
-AUTH_USERS_RAW="${HB_AUTH_USERS:-}"
-
-if [[ -z "$AUTH_USERS_RAW" ]]; then
-    ask "授權使用者 ID（多個用逗號分隔，${Y}留空 = 允許所有人${NC}）: "
-    read -r AUTH_USERS_RAW
+# ── Discord（模式 2 或 3）───────────────────────────────────
+DC_TOKEN=""
+DC_AUTH_RAW=""
+if [[ "$PLATFORM" == "2" || "$PLATFORM" == "3" ]]; then
+    inf "前置（Discord）：${BOLD}Discord Developer Portal${NC} → Bot → Token；並開啟 ${BOLD}Message Content Intent${NC}"
+    echo ""
+    DC_TOKEN="${HB_DC_TOKEN:-}"
+    if [[ -z "$DC_TOKEN" ]]; then
+        while [[ -z "$DC_TOKEN" ]]; do
+            ask "Discord Bot Token: "
+            read -r DC_TOKEN
+            DC_TOKEN="${DC_TOKEN// /}"
+            [[ -z "$DC_TOKEN" ]] && printf "  ${R}已選擇 Discord，Token 不能為空${NC}\n"
+        done
+        ok "Discord Token 已輸入"
+    else
+        ok "Discord Token 已從環境變數讀取"
+    fi
+    echo ""
+    DC_AUTH_RAW="${HB_DC_AUTH_USERS:-}"
+    if [[ -z "$DC_AUTH_RAW" ]]; then
+        ask "Discord 授權使用者 ID（Snowflake，多個用逗號分隔，${Y}留空 = 不限制${NC}）: "
+        read -r DC_AUTH_RAW
+    fi
+    DC_AUTH_RAW="${DC_AUTH_RAW// /}"
+    [[ -z "$DC_AUTH_RAW" ]] && warn "未設定 Discord 授權使用者，所有人均可使用此 Bot！"
+    echo ""
 fi
-AUTH_USERS_RAW="${AUTH_USERS_RAW// /}"
-[[ -z "$AUTH_USERS_RAW" ]] && warn "未設定授權使用者，所有人均可使用此 Bot！"
-echo ""
+
+# 最終檢查（非互動若漏設會在這裡擋下）
+if [[ "$PLATFORM" == "1" || "$PLATFORM" == "3" ]]; then
+    [[ -z "${TG_TOKEN// /}" ]] && err "已選擇 Telegram，請設定 HB_TG_TOKEN 或於安裝時輸入 Token"
+fi
+if [[ "$PLATFORM" == "2" || "$PLATFORM" == "3" ]]; then
+    [[ -z "${DC_TOKEN// /}" ]] && err "已選擇 Discord，請設定 HB_DC_TOKEN 或於安裝時輸入 Token"
+fi
 
 # ══════════════════════════════════════════════════════════════
 # [5/6]  AI 模型配置
@@ -495,7 +569,9 @@ step "[6/6] 寫入設定 & 安裝依賴"
 
 # Export for Python
 export HB_TG_TOKEN="$TG_TOKEN"
+export HB_DC_TOKEN="$DC_TOKEN"
 export HB_AUTH_RAW="$AUTH_USERS_RAW"
+export HB_DC_AUTH_RAW="$DC_AUTH_RAW"
 for i in 0 1 2; do
     export "HB_M${i}_NAME=${MODEL_NAMES[$i]:-}"
     export "HB_M${i}_PROV=${MODEL_PROVIDERS[$i]:-}"
@@ -513,6 +589,9 @@ def env(k, d=""): return os.environ.get(k, d)
 
 raw = env("HB_AUTH_RAW").strip()
 auth = [int(x.strip()) for x in raw.split(",") if x.strip().lstrip("-").isdigit()]
+
+dc_raw = env("HB_DC_AUTH_RAW").strip()
+dc_auth = [int(x.strip()) for x in dc_raw.split(",") if x.strip().isdigit()]
 
 models = []
 for i in range(3):
@@ -540,9 +619,14 @@ model_roles = {
     "daily":   min(2, n - 1),
 }
 
+tg_tok = env("HB_TG_TOKEN", "").strip()
+dc_tok = env("HB_DC_TOKEN", "").strip()
+
 config = {
-    "telegram_token":   env("HB_TG_TOKEN"),
+    "telegram_token":   tg_tok,
+    "discord_token":    dc_tok,
     "authorized_users": auth,
+    "discord_authorized_users": dc_auth,
     "max_tokens":  4096,
     "max_history": 50,
     "model_roles": model_roles,
@@ -563,7 +647,8 @@ with open(path, "w", encoding="utf-8") as f:
 
 print(f"  ✅  config.json → {path}")
 print(f"  ✅  模型數量: {len(models)} 組")
-print(f"  ✅  授權使用者: {auth if auth else '（不限制）'}")
+print(f"  ✅  Telegram 授權: {auth if auth else '（不限制）'}")
+print(f"  ✅  Discord 授權: {dc_auth if dc_auth else '（不限制）'}")
 PYEOF
 
 # ── Virtual environment ────────────────────────────────────────
@@ -654,4 +739,4 @@ printf "  📖 完整說明: ${DIM}$INSTALL_DIR/QUICKSTART.md${NC}\n"
 printf "\n"
 printf "  💡 提示：PATH 已添加到 ${DIM}$PROFILE${NC}，重啟終端後在其他 shell 中也可使用\n"
 printf "\n"
-printf "  🎉 去 Telegram 找到你的 Bot，發送 ${B}/start${NC} 開始！\n\n"
+printf "  🎉 啟動後：Telegram 可對 Bot 發送 ${B}/start${NC}；Discord 於已授權頻道／DM 直接 @ Bot 對話。\n\n"

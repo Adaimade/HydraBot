@@ -59,7 +59,7 @@ try {
 } catch {
     $ver = "1.1.0"
 }
-Write-Host "  Self-expanding AI Assistant via Telegram  " -NoNewline -ForegroundColor White
+Write-Host "  Self-expanding AI Assistant（Telegram / Discord） " -NoNewline -ForegroundColor White
 Write-Host "v$ver" -ForegroundColor Green
 Write-Host "  https://github.com/Adaimade/HydraBot" -ForegroundColor DarkGray
 Write-Host ""
@@ -142,7 +142,7 @@ Write-Host ""
 Write-Host "  [3/6] 下載核心檔案" -ForegroundColor White
 Hr
 
-$coreFiles = @("agent.py","bot.py","main.py","tools_builtin.py","scheduler.py","sub_agent_manager.py","requirements.txt","hydrabot","hydrabot.bat","VERSION")
+$coreFiles = @("agent.py","bot.py","main.py","cli.py","discord_bot.py","learning.py","tools_builtin.py","scheduler.py","sub_agent_manager.py","requirements.txt","hydrabot","hydrabot.bat","VERSION")
 $scriptFiles = @("scripts/update.sh","scripts/update.ps1","scripts/start.sh")
 $failed = @()
 
@@ -191,18 +191,75 @@ Write-Host ""
 Write-Host "  [5/6] 設定 HydraBot" -ForegroundColor White
 Hr
 
-# Telegram token
-Write-Host ""
-Write-Host "  Telegram Bot Token" -ForegroundColor White
-Write-Host "  （從 @BotFather 取得，格式: 1234567890:ABCdef...）" -ForegroundColor DarkGray
-$TG_TOKEN = Ask "Token："
-if ([string]::IsNullOrWhiteSpace($TG_TOKEN)) { $TG_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN" }
+# PLATFORM: 1=TG only, 2=DC only, 3=both — HB_PLATFORM / env inference / interactive
+$PLATFORM = $null
+$envPlat = $env:HB_PLATFORM
+if (-not [string]::IsNullOrWhiteSpace($envPlat)) {
+    switch -Regex ($envPlat.ToLower()) {
+        "^(1|tg|telegram)$" { $PLATFORM = "1" }
+        "^(2|dc|discord)$"  { $PLATFORM = "2" }
+        "^(3|both|all)$"    { $PLATFORM = "3" }
+    }
+}
+if (-not $PLATFORM) {
+    $hasTg = -not [string]::IsNullOrWhiteSpace($env:HB_TG_TOKEN)
+    $hasDc = -not [string]::IsNullOrWhiteSpace($env:HB_DC_TOKEN)
+    if ($hasTg -and $hasDc) { $PLATFORM = "3" }
+    elseif ($hasTg) { $PLATFORM = "1" }
+    elseif ($hasDc) { $PLATFORM = "2" }
+}
+while (-not $PLATFORM) {
+    Write-Host ""
+    Write-Host "  請選擇要啟用的平台：" -ForegroundColor White
+    Write-Host "    1 = 僅 Telegram" -ForegroundColor DarkGray
+    Write-Host "    2 = 僅 Discord" -ForegroundColor DarkGray
+    Write-Host "    3 = Telegram + Discord（並行）" -ForegroundColor DarkGray
+    $p = Ask "選擇 [1/2/3，預設 1]："
+    if ([string]::IsNullOrWhiteSpace($p)) { $p = "1" }
+    if ($p -match "^[123]$") { $PLATFORM = $p } else { Yellow "請輸入 1、2 或 3" }
+}
+Green "OK  平台模式: $PLATFORM"
 
-# Authorized users
-Write-Host ""
-Write-Host "  授權使用者 Telegram ID（多個用逗號分隔，留空=不限制）" -ForegroundColor White
-Write-Host "  （從 @userinfobot 取得你的 ID）" -ForegroundColor DarkGray
-$authInput = Ask "使用者 ID："
+$TG_TOKEN = ""
+$DC_TOKEN = ""
+$authInput = ""
+$dcAuthInput = ""
+
+if ($PLATFORM -eq "1" -or $PLATFORM -eq "3") {
+    Write-Host ""
+    Write-Host "  Telegram Bot Token" -ForegroundColor White
+    Write-Host "  （從 @BotFather 取得）" -ForegroundColor DarkGray
+    $TG_TOKEN = $env:HB_TG_TOKEN
+    if ([string]::IsNullOrWhiteSpace($TG_TOKEN)) {
+        $TG_TOKEN = Ask "Token："
+    }
+    while ([string]::IsNullOrWhiteSpace($TG_TOKEN)) {
+        Red "已選擇 Telegram，請輸入 Token"
+        $TG_TOKEN = Ask "Token："
+    }
+    Write-Host ""
+    Write-Host "  Telegram 授權使用者 ID（多個用逗號分隔，留空=不限制）" -ForegroundColor White
+    $authInput = $env:HB_AUTH_USERS
+    if ([string]::IsNullOrWhiteSpace($authInput)) { $authInput = Ask "使用者 ID：" }
+}
+
+if ($PLATFORM -eq "2" -or $PLATFORM -eq "3") {
+    Write-Host ""
+    Write-Host "  Discord Bot Token" -ForegroundColor White
+    Write-Host "  （Developer Portal → Bot → Token；並開啟 Message Content Intent）" -ForegroundColor DarkGray
+    $DC_TOKEN = $env:HB_DC_TOKEN
+    if ([string]::IsNullOrWhiteSpace($DC_TOKEN)) {
+        $DC_TOKEN = Ask "Token："
+    }
+    while ([string]::IsNullOrWhiteSpace($DC_TOKEN)) {
+        Red "已選擇 Discord，請輸入 Token"
+        $DC_TOKEN = Ask "Token："
+    }
+    Write-Host ""
+    Write-Host "  Discord 授權使用者 ID（Snowflake，多個用逗號分隔，留空=不限制）" -ForegroundColor White
+    $dcAuthInput = $env:HB_DC_AUTH_USERS
+    if ([string]::IsNullOrWhiteSpace($dcAuthInput)) { $dcAuthInput = Ask "使用者 ID：" }
+}
 
 $authJson = "[]"
 if (-not [string]::IsNullOrWhiteSpace($authInput)) {
@@ -211,6 +268,18 @@ if (-not [string]::IsNullOrWhiteSpace($authInput)) {
         $authJson = "[" + ($ids -join ",") + "]"
     }
 }
+
+$dcAuthJson = "[]"
+if (-not [string]::IsNullOrWhiteSpace($dcAuthInput)) {
+    $dcIds = $dcAuthInput -split "[,\s]+" | Where-Object { $_ -match "^\d+$" } | ForEach-Object { $_.Trim() }
+    if ($dcIds.Count -gt 0) {
+        $dcAuthJson = "[" + ($dcIds -join ",") + "]"
+    }
+}
+
+# JSON-safe token strings
+$tgJson = ConvertTo-Json -Compress -InputObject $TG_TOKEN
+$dcJson = ConvertTo-Json -Compress -InputObject $DC_TOKEN
 
 # Models
 $modelsJson = "["
@@ -296,8 +365,10 @@ $dailyIdx = if ($modelCount -ge 3) { 2 } else { $fastIdx }
 # Write config.json
 $configContent = @"
 {
-  "telegram_token": "$TG_TOKEN",
+  "telegram_token": $tgJson,
+  "discord_token": $dcJson,
   "authorized_users": $authJson,
+  "discord_authorized_users": $dcAuthJson,
   "max_tokens": 4096,
   "max_history": 50,
   "model_roles": {
