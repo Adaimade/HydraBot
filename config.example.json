@@ -17,6 +17,13 @@
 
   "max_tokens": 4096,
   "max_history": 50,
+  "_註解_trace": "工具步驟追蹤：stdout 預設開啟；to_chat 開啟後會把每一步工具調用推送到聊天視窗（較吵但可觀察流程）",
+  "tool_trace_stdout": true,
+  "tool_trace_to_chat": false,
+  "_註解_gate_policy": "程式層 gate 守門：QA 禁止 gate；改碼任務宣告完成前需 gate 通過",
+  "enforce_gate_policy": true,
+  "gate_forbidden_in_qa": true,
+  "require_gate_before_done": true,
 
   "_註解_model_roles": "三層模型角色對應（填 models 陣列的索引）：primary=主力、fast=快速、daily=日常",
   "model_roles": {

@@ -14,6 +14,7 @@ import traceback
 import threading
 import concurrent.futures
 import uuid
+import re
 from pathlib import Path
 from typing import Any
 
@@ -111,6 +112,14 @@ class AgentPool:
         Telegram 預設為 \"\"（memory.json、schedules.json、timezones.json）。
         """
         self.config = config
+        # Tool trace switches:
+        # - tool_trace_stdout: print each tool call/result to process stdout
+        # - tool_trace_to_chat: also push concise trace lines back to current chat session
+        self.tool_trace_stdout = bool(config.get("tool_trace_stdout", True))
+        self.tool_trace_to_chat = bool(config.get("tool_trace_to_chat", False))
+        self.enforce_gate_policy = bool(config.get("enforce_gate_policy", True))
+        self.gate_forbidden_in_qa = bool(config.get("gate_forbidden_in_qa", True))
+        self.require_gate_before_done = bool(config.get("require_gate_before_done", True))
         self._data_prefix = data_prefix or ""
         self._memory_path = (
             Path(f"{self._data_prefix}memory.json")
@@ -186,6 +195,36 @@ class AgentPool:
         # Load tools
         self._load_builtin_tools()
         self._load_dynamic_tools()
+
+    GATE_TOOL_NAMES = {
+        "quick_fix_then_gate",
+        "format_and_fix",
+        "run_validation",
+        "quality_gate",
+    }
+    COMPLETION_PATTERNS = (
+        r"已完成",
+        r"完成修正",
+        r"修正完成",
+        r"可交付",
+        r"可提交",
+        r"全部完成",
+        r"處理完成",
+        r"finished",
+        r"done",
+    )
+    CODE_CHANGE_PATTERNS = (
+        r"改檔",
+        r"修改(程式|代碼|code|檔案)",
+        r"修(復|正)?\s*bug",
+        r"修正錯誤",
+        r"除錯",
+        r"重構",
+        r"refactor",
+        r"fix\s+bug",
+        r"產出可提交程式碼",
+        r"提交程式碼",
+    )
 
     # ─────────────────────────────────────────────
     # Python namespace per session
@@ -379,6 +418,7 @@ class AgentPool:
 
         history = self.conversations[session_id]
         history.append({"role": "user", "content": message})
+        turn_state = self._build_turn_state(message)
 
         # Build session tools (includes session-bound spawn_agent)
         session_tools = self._session_tools(session_id)
@@ -390,12 +430,26 @@ class AgentPool:
         try:
             client = self.get_client(model_idx)
             if client.provider == "anthropic":
-                response = self._anthropic_loop(client, list(history), session_tools, session_id)
+                response = self._anthropic_loop(
+                    client,
+                    list(history),
+                    session_tools,
+                    session_id,
+                    turn_state,
+                )
             else:
-                response = self._openai_loop(client, list(history), session_tools, session_id)
+                response = self._openai_loop(
+                    client,
+                    list(history),
+                    session_tools,
+                    session_id,
+                    turn_state,
+                )
         except Exception as e:
             response = f"❌ Agent error: {e}\n```\n{traceback.format_exc()}\n```"
             print(response)
+
+        response = self._enforce_completion_rule(response, turn_state)
 
         history.append({"role": "assistant", "content": response})
 
@@ -1159,14 +1213,99 @@ class AgentPool:
     def _get_schemas(self, tools_dict: dict) -> list:
         return [schema for schema, _ in tools_dict.values()]
 
-    def _call_tool(self, name: str, inputs: dict, tools_dict: dict) -> Any:
+    def _build_turn_state(self, message: str) -> dict:
+        task_type = self._classify_task_type(message)
+        return {
+            "task_type": task_type,
+            "gate_attempted": False,
+            "gate_passed": False,
+        }
+
+    def _classify_task_type(self, message: str) -> str:
+        text = (message or "").strip().lower()
+        if not text:
+            return "qa"
+        for pattern in self.CODE_CHANGE_PATTERNS:
+            if re.search(pattern, text, flags=re.IGNORECASE):
+                return "code_change"
+        action_words = ("改", "修", "重構", "新增", "實作", "撰寫")
+        code_words = ("程式", "代碼", "code", "檔案", "bug", "錯誤")
+        if any(w in text for w in action_words) and any(w in text for w in code_words):
+            return "code_change"
+        return "qa"
+
+    def _contains_completion_claim(self, response: str) -> bool:
+        text = (response or "").lower()
+        if not text:
+            return False
+        return any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in self.COMPLETION_PATTERNS)
+
+    def _did_gate_pass(self, result: Any) -> bool:
+        text = str(result or "").upper()
+        if not text:
+            return False
+        # Accept PASS-like outputs while excluding explicit failures.
+        return "PASSED" in text and "FAILED" not in text and "❌" not in text
+
+    def _enforce_completion_rule(self, response: str, turn_state: dict) -> str:
+        if not self.enforce_gate_policy or not self.require_gate_before_done:
+            return response
+        if turn_state.get("task_type") != "code_change":
+            return response
+        if not self._contains_completion_claim(response):
+            return response
+        if turn_state.get("gate_passed"):
+            return response
+        if turn_state.get("gate_attempted"):
+            hint = "目前 gate 尚未通過，請先修正失敗項目後再回報完成。"
+        else:
+            hint = (
+                "此任務屬於改碼/修 bug，尚未執行 gate。"
+                "請先執行 `quick_fix_then_gate`（或 `format_and_fix -> run_validation -> quality_gate`）再回報完成。"
+            )
+        return f"{response}\n\n⚠️ 尚不可宣告完成：{hint}"
+
+    def _call_tool(self, name: str, inputs: dict, tools_dict: dict, turn_state: dict | None = None) -> Any:
         if name not in tools_dict:
             return f"❌ 找不到工具: '{name}'"
+        if (
+            self.enforce_gate_policy
+            and turn_state
+            and turn_state.get("task_type") == "qa"
+            and self.gate_forbidden_in_qa
+            and name in self.GATE_TOOL_NAMES
+        ):
+            return (
+                "⛔ 此回合為一般問答（QA），已阻擋 gate 工具呼叫。"
+                "若你要我實際改檔/修 bug，請在需求中明確說明。"
+            )
         _, func = tools_dict[name]
         try:
-            return func(**inputs)
+            result = func(**inputs)
+            if turn_state is not None and name in self.GATE_TOOL_NAMES:
+                turn_state["gate_attempted"] = True
+                turn_state["gate_passed"] = turn_state.get("gate_passed", False) or self._did_gate_pass(result)
+            return result
         except Exception:
+            if turn_state is not None and name in self.GATE_TOOL_NAMES:
+                turn_state["gate_attempted"] = True
             return f"❌ 工具 '{name}' 錯誤:\n```\n{traceback.format_exc()}\n```"
+
+    def _emit_tool_trace(self, session_id, text: str) -> None:
+        """Emit tool trace to stdout and optionally to chat."""
+        if self.tool_trace_stdout:
+            print(text)
+        if not self.tool_trace_to_chat:
+            return
+        if session_id is None or not self._send_func or not self._loop:
+            return
+        try:
+            asyncio.run_coroutine_threadsafe(
+                self._send_func(session_id, text),
+                self._loop,
+            )
+        except Exception:
+            pass
 
     def _api_call_with_retry(self, call_fn, label: str = "API"):
         """Wrap an API call with retry + exponential backoff for transient errors."""
@@ -1190,8 +1329,14 @@ class AgentPool:
                 time.sleep(wait)
         raise last_err
 
-    def _anthropic_loop(self, client: _ModelClient, messages: list,
-                         tools_dict: dict, session_id) -> str:
+    def _anthropic_loop(
+        self,
+        client: _ModelClient,
+        messages: list,
+        tools_dict: dict,
+        session_id,
+        turn_state: dict | None = None,
+    ) -> str:
         system = self._system_prompt(session_id)
         schemas = self._get_schemas(tools_dict)
 
@@ -1212,9 +1357,12 @@ class AgentPool:
                 results = []
                 for block in resp.content:
                     if block.type == "tool_use":
-                        print(f"  🔧 {block.name}({json.dumps(block.input)[:100]})")
-                        result = self._call_tool(block.name, block.input, tools_dict)
-                        print(f"     → {str(result)[:100]}")
+                        self._emit_tool_trace(
+                            session_id,
+                            f"🔧 {block.name}({json.dumps(block.input, ensure_ascii=False)[:160]})",
+                        )
+                        result = self._call_tool(block.name, block.input, tools_dict, turn_state)
+                        self._emit_tool_trace(session_id, f"   → {str(result)[:180]}")
                         results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
@@ -1227,8 +1375,14 @@ class AgentPool:
 
         return "❌ 超過工具呼叫次數上限"
 
-    def _openai_loop(self, client: _ModelClient, history: list,
-                      tools_dict: dict, session_id) -> str:
+    def _openai_loop(
+        self,
+        client: _ModelClient,
+        history: list,
+        tools_dict: dict,
+        session_id,
+        turn_state: dict | None = None,
+    ) -> str:
         system = self._system_prompt(session_id)
         messages = [{"role": "system", "content": system}] + history
         schemas = self._get_schemas(tools_dict)
@@ -1270,9 +1424,12 @@ class AgentPool:
                         result = f"❌ 無法解析工具參數（JSON）: {raw_args[:300]}"
                         args = {}
                     else:
-                        print(f"  🔧 {tc.function.name}({str(args)[:100]})")
-                        result = self._call_tool(tc.function.name, args, tools_dict)
-                        print(f"     → {str(result)[:100]}")
+                        self._emit_tool_trace(
+                            session_id,
+                            f"🔧 {tc.function.name}({str(args)[:160]})",
+                        )
+                        result = self._call_tool(tc.function.name, args, tools_dict, turn_state)
+                        self._emit_tool_trace(session_id, f"   → {str(result)[:180]}")
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,

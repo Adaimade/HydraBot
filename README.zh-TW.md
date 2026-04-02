@@ -27,6 +27,7 @@
 | 📊 **進度推送** | 子代理執行中可即時呼叫 `report_progress` 推送進度更新 |
 | 🏢 **多專案隔離** | 每個 Telegram 群組 / Topic 擁有完全獨立的對話脈絡 |
 | 🔌 **MCP 支援** | 可連接 MCP Server，動態擴充外部工具能力 |
+| ✅ **品質工具與 Gate 政策** | 可選的 `tools/` 內建工具（`run_validation`、`format_and_fix`、`quality_gate`、`quick_fix_then_gate`、`code_task_guard`），以及 `config.json` 內工具追蹤與完成／gate 守門設定 |
 
 ---
 
@@ -42,8 +43,11 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Adaimade/HydraBot/main/insta
 1. 檢測並安裝 Python 3.10+
 2. 克隆/下載核心檔案
 3. 建立 Python 虛擬環境並安裝依賴
-4. 互動式填寫 Telegram Token、AI API Key，並依序設定**主力 / 快速 / 日常**三組模型（可含本地 LLM）
-5. 設定全域 `hydrabot` 指令（可從任何地方使用）
+4. 選擇訊息平台：**僅 Telegram**、**僅 Discord**，或**兩者並行**，再依選擇詢問 Token 與（選用）授權名單（Discord 需在 Developer Portal 開啟 **Message Content Intent**；詳見 `config.example.json` 的 `discord_*` 欄位）
+5. 互動式填寫 AI API Key，並依序設定**主力 / 快速 / 日常**三組模型（可含本地 LLM）
+6. 設定全域 `hydrabot` 指令（可從任何地方使用）
+
+非互動／CI 部署可設定環境變數：`HB_PLATFORM`（`1`／`2`／`3` 或 `tg`／`dc`／`both`）、`HB_TG_TOKEN`、`HB_DC_TOKEN`，以及選用的 `HB_AUTH_USERS`、`HB_DC_AUTH_USERS`。
 
 ### Windows (PowerShell)
 
@@ -205,12 +209,23 @@ CLI 內建指令：
 
 | 參數 | 說明 |
 |------|------|
-| `telegram_token` | BotFather 取得的 Bot Token |
+| `telegram_token` | BotFather 取得的 Bot Token（若僅使用 Discord 可留空） |
+| `discord_token` | Discord Bot Token（若僅使用 Telegram 可留空）；須開啟 Message Content Intent |
 | `authorized_users` | 允許使用的 Telegram 用戶 ID 列表（空陣列 = 不限制） |
+| `discord_authorized_users` | 允許使用的 Discord 使用者 Snowflake 列表（空陣列 = 不限制） |
+| `tool_trace_stdout` | 是否將每次工具呼叫摘要印到進程 stdout（預設 `true`） |
+| `tool_trace_to_chat` | 是否額外將摘要推送到聊天視窗（預設 `false`，較吵，適合除錯） |
+| `enforce_gate_policy` | 是否啟用「QA／改碼」與 gate 相關的執行階段規則（預設 `true`） |
+| `gate_forbidden_in_qa` | 一般問答回合是否阻擋 gate 類工具（預設 `true`） |
+| `require_gate_before_done` | 改碼任務若未通過 gate 卻宣告「完成」，是否在回覆後附加提醒（預設 `true`） |
 | `max_tokens` | 每次回覆最大 token 數（預設 4096） |
 | `max_history` | 保留的對話輪數（預設 50） |
 | `model_roles` | 三層角色對應 `models` 陣列索引：`primary`（主力）、`fast`（快速）、`daily`（日常） |
 | `spawn_routing` | 子代理任務類型 → 使用哪一層：`reading` / `writing` / `review` / `advice` / `debug` / `general` 對應 `primary` / `fast` / `daily` |
+
+### 品質工具（選用）
+
+專案內建於 `tools/` 的輔助工具（亦可透過 `create_tool` 擴充）：**`format_and_fix`**、**`run_validation`**、**`quality_gate`**、**`quick_fix_then_gate`**、**`code_task_guard`**。它們以 **`python -m ruff` / `mypy` / `pytest`** 執行，請在 **HydraBot 同一個 venv** 內安裝對應套件。使用時機與敘事層約束另見根目錄 **[SOUL.md](SOUL.md)**。
 
 ### 三層模型與子代理路由
 

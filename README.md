@@ -27,6 +27,7 @@
 | 📊 **Progress Reporting** | Sub-agents can call `report_progress` in real-time during execution |
 | 🏢 **Multi-Project Isolation** | Each Telegram group / Topic has completely independent conversation context |
 | 🔌 **MCP Support** | Connect to MCP Servers to dynamically extend tool capabilities |
+| ✅ **Quality tools & gate policy** | Optional `tools/` helpers (`run_validation`, `format_and_fix`, `quality_gate`, `quick_fix_then_gate`, `code_task_guard`) plus configurable tool tracing and completion/gate rules in `config.json` |
 
 ---
 
@@ -42,8 +43,11 @@ The installer will automatically:
 1. Detect and install Python 3.10+
 2. Clone / download core files
 3. Create a Python virtual environment and install dependencies
-4. Interactively prompt for your Telegram Token, AI API Key, and **primary / fast / daily** model slots (cloud or local LLM)
-5. Set up the global `hydrabot` command (works from anywhere)
+4. Ask which messengers to enable: **Telegram only**, **Discord only**, or **both** — then prompt for the relevant bot token(s) and optional user allowlists (see `config.example.json` for `discord_*` keys)
+5. Interactively configure your AI API keys and **primary / fast / daily** model slots (cloud or local LLM)
+6. Set up the global `hydrabot` command (works from anywhere)
+
+Non-interactive / CI installs can set `HB_PLATFORM` (`1` / `2` / `3` or `tg` / `dc` / `both`) and `HB_TG_TOKEN` / `HB_DC_TOKEN` (and optional `HB_AUTH_USERS`, `HB_DC_AUTH_USERS`).
 
 ### Windows (PowerShell)
 
@@ -205,12 +209,23 @@ Copy `config.example.json` and modify:
 
 | Parameter | Description |
 |-----------|-------------|
-| `telegram_token` | Bot Token obtained from BotFather |
-| `authorized_users` | List of authorized Telegram user IDs (empty array = no restriction) |
+| `telegram_token` | Bot Token from BotFather (can be empty if you use Discord only) |
+| `discord_token` | Discord bot token (empty if Telegram-only). Enable **Message Content Intent** in the Developer Portal |
+| `authorized_users` | Allowed Telegram user IDs (empty = no restriction) |
+| `discord_authorized_users` | Allowed Discord user snowflakes (empty = no restriction) |
+| `tool_trace_stdout` | Log each tool call/result to process stdout (default `true`) |
+| `tool_trace_to_chat` | Also push short trace lines to the chat session (default `false`, noisy) |
+| `enforce_gate_policy` | Apply runtime rules around QA vs code-change and gate tools (default `true`) |
+| `gate_forbidden_in_qa` | Block gate-style tools when the turn is classified as general QA (default `true`) |
+| `require_gate_before_done` | When a code-change turn claims “done” without a passing gate, append a warning (default `true`) |
 | `max_tokens` | Max tokens per response (default 4096) |
 | `max_history` | Number of conversation turns to retain (default 50) |
 | `model_roles` | Maps tiers to `models` indices: `primary`, `fast`, `daily` |
 | `spawn_routing` | Maps sub-agent task types (`reading`, `writing`, `review`, `advice`, `debug`, `general`) to a tier name |
+
+### Quality tools (optional)
+
+Shipped under `tools/` (or add your own via `create_tool`): **`format_and_fix`**, **`run_validation`**, **`quality_gate`**, **`quick_fix_then_gate`**, **`code_task_guard`**. They invoke `python -m ruff`, `mypy`, `pytest` from the **same venv** as HydraBot — install those packages in the venv if needed. Behavior and when to run them are also summarized in [SOUL.md](SOUL.md) (Traditional Chinese).
 
 ### Three-tier models and sub-agent routing
 

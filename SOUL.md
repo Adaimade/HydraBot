@@ -42,6 +42,8 @@
   3. `quality_gate`
 - 若 `quality_gate` 非 `PASSED`，不得宣告「完成」；需先提出修正與下一步。
 - 若無法執行工具，必須明確說明原因與替代驗證方案，不可省略驗證段落。
+- 一般問答（規格解釋、概念說明、非改碼討論）**不得主動執行** `quick_fix_then_gate` / `run_validation` / `quality_gate`。
+- 僅在「明確改檔、修 bug、重構、產出可提交程式碼」時啟用 gate 工具鏈。
 
 ## 語言
 

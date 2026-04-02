@@ -25,7 +25,8 @@ def _run(args, cwd: Path, timeout: int) -> dict:
 
 def get_tools():
     def quick_fix_then_gate(cwd: str = ".", timeout: int = 240) -> str:
-        workdir = Path(cwd).resolve()
+        cwd_value = cwd if isinstance(cwd, str) and cwd.strip() else "."
+        workdir = Path(cwd_value).resolve()
         if not workdir.exists():
             return f"❌ 目錄不存在: {workdir}"
 

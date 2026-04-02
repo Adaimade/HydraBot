@@ -8,7 +8,13 @@
 
 ### 方法 1：使用安裝腳本（推薦）
 
-自動配置一切，包括 PATH 設置。
+自動配置一切，包括 PATH 設置。安裝過程中會請你選擇訊息平台：
+
+- **僅 Telegram** — 填 BotFather Token 與（選用）授權使用者 ID  
+- **僅 Discord** — 填 Bot Token、（選用）授權 Snowflake ID；請在 Developer Portal 開啟 **Message Content Intent**  
+- **Telegram + Discord** — 兩邊都會詢問  
+
+未使用的平台在 `config.json` 裡對應 token 可留空。自動化部署可用環境變數覆寫，例如 `HB_PLATFORM`（`1` / `2` / `3` 或 `tg` / `dc` / `both`）、`HB_TG_TOKEN`、`HB_DC_TOKEN`、`HB_AUTH_USERS`、`HB_DC_AUTH_USERS`。
 
 **Windows (PowerShell)：**
 ```powershell
@@ -32,6 +38,27 @@ cp config.example.json config.json
 ```
 
 **手動安裝後需要設置 PATH** (見下方)
+
+---
+
+## 🧪 內建品質工具與 Gate 政策
+
+專案內 `tools/` 目錄可放置（或由 `create_tool` 建立）下列工具，用於改碼後驗證；它們使用 **目前 venv 的 Python**（`python -m ruff` 等），請在 venv 內安裝 `ruff`、`mypy`、`pytest`（若尚未安裝）。
+
+| 工具 | 用途 |
+|------|------|
+| `format_and_fix` | `ruff check --fix` + `ruff format` |
+| `run_validation` | `ruff` / `mypy` / `pytest`（可選步驟） |
+| `quality_gate` | 最小閘門：`ruff check` + `pytest` |
+| `quick_fix_then_gate` | 一鍵：fix → format → check → mypy → pytest |
+| `code_task_guard` | 寫碼任務前輸出守門清單與流程約束 |
+
+在 `config.json` 可調整（詳見 `config.example.json`）：
+
+- **`tool_trace_stdout` / `tool_trace_to_chat`**：是否將每次工具呼叫摘要印到終端機，或額外推送到聊天（除錯用，後者較吵）。  
+- **`enforce_gate_policy` / `gate_forbidden_in_qa` / `require_gate_before_done`**：執行階段對「一般問答 vs 改碼任務」的 gate 行為（預設開啟時，QA 回合不會亂跑 gate；改碼任務若未通過 gate 即宣告「完成」會被提醒）。
+
+人設與與 code1.0 向量庫銜接的細節見根目錄 **[SOUL.md](SOUL.md)**。
 
 ---
 
@@ -225,5 +252,6 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 ## 🆘 需要幫助？
 
-- 查看完整 [README](README.md)
+- 查看完整 [README](README.md) 與 [README.zh-TW.md](README.zh-TW.md)
+- 人設與工具約束：[SOUL.md](SOUL.md)
 - 提交 Issue: https://github.com/Adaimade/HydraBot/issues
