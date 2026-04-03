@@ -17,6 +17,7 @@ import uuid
 import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from scheduler import NotificationScheduler, parse_fire_at, REPEAT_INTERVALS
 from learning import ExperienceLog, is_likely_failure
@@ -29,6 +30,36 @@ except ImportError:
 
 # Maximum number of tool-call iterations per agent loop turn
 MAX_TOOL_CALLS = 30
+
+
+def _ollama_list_models_from_openai_base_url(openai_base_url: str | None) -> list[str] | None:
+    """
+    If openai_base_url points at Ollama's OpenAI-compatible shim, query native /api/tags.
+    Returns [] if Ollama responded but has no models; None if not Ollama or unreachable.
+    """
+    if not openai_base_url or not str(openai_base_url).strip():
+        return None
+    try:
+        import requests
+
+        p = urlparse(str(openai_base_url).strip())
+        if not p.scheme or not p.netloc:
+            return None
+        origin = f"{p.scheme}://{p.netloc}"
+        r = requests.get(f"{origin.rstrip('/')}/api/tags", timeout=3.0)
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        if not isinstance(data, dict) or "models" not in data:
+            return None
+        models = data.get("models") or []
+        names: list[str] = []
+        for m in models:
+            if isinstance(m, dict) and m.get("name"):
+                names.append(str(m["name"]))
+        return names
+    except Exception:
+        return None
 
 
 def _safe_step_key(name: str, fallback: str) -> str:
@@ -484,7 +515,34 @@ class AgentPool:
                     turn_state,
                 )
         except Exception as e:
-            response = f"❌ Agent error: {e}\n```\n{traceback.format_exc()}\n```"
+            extra = ""
+            es = str(e).lower()
+            if "not found" in es and "model" in es:
+                cfg = self.model_configs[model_idx % len(self.model_configs)]
+                bu = cfg.get("base_url")
+                ollama_names = _ollama_list_models_from_openai_base_url(bu)
+                if ollama_names is not None:
+                    if not ollama_names:
+                        extra = (
+                            "\n\n💡 已連到本機 Ollama（/api/tags），但目前**沒有已下載的模型**。"
+                            "請執行 `ollama pull <模型名>`，再用 `hydrabot config` 把該槽的 `model`"
+                            "設成與 `ollama list` **完全一致**的名稱。"
+                        )
+                    else:
+                        show = ollama_names[:15]
+                        tail = "、".join(show)
+                        suffix = f"（另有 {len(ollama_names) - 15} 個未列出）" if len(ollama_names) > 15 else ""
+                        extra = (
+                            f"\n\n💡 本機 Ollama 目前可用的模型：`{tail}`{suffix}。"
+                            f"請將 **{cfg.get('name') or '該'}** 槽的 `model` 改成上列其中一個（須完全一致，含標籤）。"
+                        )
+                else:
+                    extra = (
+                        "\n\n💡 模型名稱或端點不符：請用 `hydrabot config` 檢查 `model` 與 `base_url`。"
+                        "若為本機 Ollama，請確認服務在跑且 `base_url` 形如 `http://127.0.0.1:11434/v1`，"
+                        "並執行 `ollama list` / `ollama pull <名稱>` 後讓 `model` 與列表一致。"
+                    )
+            response = f"❌ Agent error: {e}{extra}\n```\n{traceback.format_exc()}\n```"
             print(response)
 
         response = self._enforce_completion_rule(response, turn_state)
