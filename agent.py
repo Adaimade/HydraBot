@@ -533,7 +533,7 @@ class AgentPool:
                         tail = "、".join(show)
                         suffix = f"（另有 {len(ollama_names) - 15} 個未列出）" if len(ollama_names) > 15 else ""
                         extra = (
-                            f"\n\n💡 本機 Ollama 目前可用的模型：`{tail}`{suffix}。"
+                            f"\n\n💡 本機 Ollama 目前可用的模型：`{tail}`{suffix}（與終端 `ollama list` 相同）。"
                             f"請將 **{cfg.get('name') or '該'}** 槽的 `model` 改成上列其中一個（須完全一致，含標籤）。"
                         )
                 else:

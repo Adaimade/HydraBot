@@ -518,6 +518,50 @@ configure_model() {
            BASE_URL="\"$_bu\""
            MODEL_DEF="qwen2.5:latest"
            NAME_DEF="本地 LLM"
+           # 若為 Ollama：查 /api/tags，預設模型改為本機已安裝的第一個（避免 qwen2.5 未 pull 即 404）
+           _oll_line=$(python3 - "$_bu" <<'PY' 2>/dev/null || echo "__FAIL__"
+import json, sys
+from urllib.parse import urlparse
+try:
+    from urllib.request import urlopen
+except ImportError:
+    print("__FAIL__")
+    sys.exit(0)
+bu = (sys.argv[1] or "").strip()
+p = urlparse(bu)
+if not p.scheme or not p.netloc:
+    print("__FAIL__")
+    sys.exit(0)
+origin = f"{p.scheme}://{p.netloc}".rstrip("/")
+try:
+    with urlopen(origin + "/api/tags", timeout=2.5) as resp:
+        data = json.loads(resp.read().decode())
+except Exception:
+    print("__FAIL__")
+    sys.exit(0)
+models = data.get("models") or []
+names = [m["name"] for m in models if isinstance(m, dict) and m.get("name")]
+if not names:
+    print("__EMPTY__")
+else:
+    print(names[0] + "\t" + ", ".join(names[:20]))
+PY
+           )
+           case "$_oll_line" in
+               __EMPTY__)
+                   warn "查無模型：已連上 Ollama，但本機尚未下載任何模型（終端 ollama list 亦會是空的）。請 ollama pull <名稱>，或手動輸入下方「模型名稱」。"
+                   ;;
+               __FAIL__)
+                   warn "查無模型：無法連線或讀取列表（與 ollama list 同源 API）。請確認 ollama serve、Base URL，或在終端執行 ollama list 自行對照後手動輸入「模型名稱」。"
+                   ;;
+               *)
+                   if [[ -n "$_oll_line" ]]; then
+                       IFS=$'\t' read -r _def0 _list0 <<< "$_oll_line"
+                       MODEL_DEF="$_def0"
+                       inf "  ℹ️  偵測到本機 Ollama 模型：${_list0}（與終端 ollama list 相同；預設已選第一個，可直接 Enter）"
+                   fi
+                   ;;
+           esac
            ;;
         *) PROVIDER="anthropic"; MODEL_DEF="claude-sonnet-4-6" ;;
     esac

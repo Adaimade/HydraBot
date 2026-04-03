@@ -39,6 +39,29 @@ function AskSecret ($prompt) {
     return $ss
 }
 
+function Get-OllamaTagsProbe {
+    param([string]$OpenAiBaseUrl)
+    $out = [pscustomobject]@{ Status = "Fail"; Names = [string[]]@() }
+    try {
+        $u = [Uri]($OpenAiBaseUrl.Trim())
+        $origin = "$($u.Scheme)://$($u.Authority)"
+        $r = Invoke-RestMethod -Uri "$origin/api/tags" -TimeoutSec 3 -ErrorAction Stop
+        $names = @()
+        foreach ($m in @($r.models)) {
+            if ($m.name) { $names += [string]$m.name }
+        }
+        if ($names.Count -eq 0) {
+            $out.Status = "Empty"
+        } else {
+            $out.Status = "Ok"
+            $out.Names = $names
+        }
+    } catch {
+        $out.Status = "Fail"
+    }
+    return $out
+}
+
 $REPO = "https://raw.githubusercontent.com/Adaimade/HydraBot/main"
 
 # ── Banner ─────────────────────────────────────────────────────
@@ -317,6 +340,29 @@ for ($i = 0; $i -lt 3; $i++) {
     if ($pIdx -notmatch "^[01234]$") { $pIdx = "0" }
     $provider = $PROVIDERS[$pIdx]
 
+    $baseUrl = "null"
+    $defModel = $DEF_MODELS[$pIdx]
+
+    if ($pIdx -eq "4") {
+        Write-Host "  常見本地端點：" -ForegroundColor White
+        Write-Host "    - Ollama   : http://127.0.0.1:11434/v1" -ForegroundColor DarkGray
+        Write-Host "    - LM Studio: http://127.0.0.1:1234/v1" -ForegroundColor DarkGray
+        Write-Host "    - vLLM     : http://127.0.0.1:8000/v1" -ForegroundColor DarkGray
+        $bu = Ask "URL（預設 http://127.0.0.1:11434/v1）："
+        if ([string]::IsNullOrWhiteSpace($bu)) { $bu = "http://127.0.0.1:11434/v1" }
+        $baseUrl = """$bu"""
+        $probe = Get-OllamaTagsProbe -OpenAiBaseUrl $bu
+        if ($probe.Status -eq "Ok") {
+            $defModel = [string]$probe.Names[0]
+            $shown = ($probe.Names | Select-Object -First 20) -join ", "
+            Inf "偵測到本機 Ollama 模型：$shown（與終端 ollama list 相同；預設已選第一個，Model 建議直接 Enter）"
+        } elseif ($probe.Status -eq "Empty") {
+            Warn "查無模型：已連上 Ollama，但本機尚未下載任何模型（終端 ollama list 亦會是空的）。請 ollama pull <名稱>，或手動輸入 Model。"
+        } else {
+            Warn "查無模型：無法連線或讀取列表（與 ollama list 同源 API）。請確認服務與 URL，或於終端執行 ollama list 對照後手動輸入 Model。"
+        }
+    }
+
     Write-Host "  API Key:" -ForegroundColor White
     if ($pIdx -eq "4") {
         $apiKey = Ask "Key（本地可留空，預設 local）："
@@ -326,28 +372,16 @@ for ($i = 0; $i -lt 3; $i++) {
         if ([string]::IsNullOrWhiteSpace($apiKey)) { $apiKey = "YOUR_MODEL_API_KEY" }
     }
 
-    $defModel = $DEF_MODELS[$pIdx]
     Write-Host "  模型名稱 [預設: $defModel]:" -ForegroundColor White
     $modelName = Ask "Model："
     if ([string]::IsNullOrWhiteSpace($modelName)) { $modelName = $defModel }
 
     $displayName = $DEF_NAMES[$pIdx]
 
-    $baseUrl = "null"
-    if ($provider -eq "openai-compatible") {
-        if ($pIdx -eq "4") {
-            Write-Host "  常見本地端點：" -ForegroundColor White
-            Write-Host "    - Ollama   : http://127.0.0.1:11434/v1" -ForegroundColor DarkGray
-            Write-Host "    - LM Studio: http://127.0.0.1:1234/v1" -ForegroundColor DarkGray
-            Write-Host "    - vLLM     : http://127.0.0.1:8000/v1" -ForegroundColor DarkGray
-            $bu = Ask "URL（預設 http://127.0.0.1:11434/v1）："
-            if ([string]::IsNullOrWhiteSpace($bu)) { $bu = "http://127.0.0.1:11434/v1" }
-            $baseUrl = """$bu"""
-        } else {
-            Write-Host "  Base URL (e.g. https://api.example.com/v1):" -ForegroundColor White
-            $bu = Ask "URL："
-            if (-not [string]::IsNullOrWhiteSpace($bu)) { $baseUrl = """$bu""" }
-        }
+    if ($provider -eq "openai-compatible" -and $pIdx -ne "4") {
+        Write-Host "  Base URL (e.g. https://api.example.com/v1):" -ForegroundColor White
+        $bu = Ask "URL："
+        if (-not [string]::IsNullOrWhiteSpace($bu)) { $baseUrl = """$bu""" }
     }
 
     if ($i -gt 0) { $modelsJson += "," }
