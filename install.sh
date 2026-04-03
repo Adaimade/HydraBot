@@ -314,7 +314,7 @@ echo ""
 # ══════════════════════════════════════════════════════════════
 step "[4/6] 訊息平台（Telegram / Discord）"
 
-# PLATFORM: 1=僅 Telegram, 2=僅 Discord, 3=兩者皆啟用
+# PLATFORM: 1=僅 Telegram, 2=僅 Discord, 3=兩者皆啟用, 4=僅終端機 CLI（不啟用即時通）
 # 優先順序：HB_PLATFORM → 由 HB_TG_TOKEN / HB_DC_TOKEN 推斷 → 互動選單
 PLATFORM=""
 if [[ -n "${HB_PLATFORM:-}" ]]; then
@@ -323,6 +323,7 @@ if [[ -n "${HB_PLATFORM:-}" ]]; then
         1|tg|telegram) PLATFORM=1 ;;
         2|dc|discord)  PLATFORM=2 ;;
         3|both|all)    PLATFORM=3 ;;
+        4|cli|terminal|none|off) PLATFORM=4 ;;
     esac
     unset _hp
 fi
@@ -338,14 +339,15 @@ if [[ -z "$PLATFORM" ]]; then
     printf "    ${B}1${NC}) 僅 ${BOLD}Telegram${NC}\n"
     printf "    ${B}2${NC}) 僅 ${BOLD}Discord${NC}\n"
     printf "    ${B}3${NC}) ${BOLD}Telegram + Discord${NC}（並行）\n"
+    printf "    ${B}4${NC}) ${BOLD}僅終端機 CLI${NC}（不要 Telegram／Discord；之後用 ${C}python3 main.py --cli${NC}）\n"
     echo ""
     while [[ -z "$PLATFORM" ]]; do
-        ask "選擇 [1/2/3，預設 1]: "
+        ask "選擇 [1/2/3/4，預設 1]: "
         read -r _plat
         _plat="${_plat:-1}"
         case "$_plat" in
-            1|2|3) PLATFORM="$_plat" ;;
-            *) printf "  ${R}請輸入 1、2 或 3${NC}\n" ;;
+            1|2|3|4) PLATFORM="$_plat" ;;
+            *) printf "  ${R}請輸入 1、2、3 或 4${NC}\n" ;;
         esac
     done
     ok "已選擇平台模式: $PLATFORM"
@@ -353,6 +355,13 @@ else
     inf "平台模式: ${BOLD}$PLATFORM${NC}（來自環境變數或憑證推斷）"
 fi
 echo ""
+
+if [[ "$PLATFORM" == "4" ]]; then
+    inf "已選 **僅 CLI**：config 將不填 Telegram／Discord。啟動方式："
+    inf "  ${BOLD}cd${NC} 到專案工作目錄後 ${BOLD}source venv/bin/activate${NC}，再執行 ${BOLD}python3 main.py --cli${NC}"
+    inf "若之後要跑 Bot，請編輯 config.json 補上 token，或使用 ${BOLD}hydrabot config${NC}。"
+    echo ""
+fi
 
 # ── Telegram（模式 1 或 3）──────────────────────────────────
 TG_TOKEN=""
@@ -419,6 +428,7 @@ fi
 if [[ "$PLATFORM" == "2" || "$PLATFORM" == "3" ]]; then
     [[ -z "${DC_TOKEN// /}" ]] && err "已選擇 Discord，請設定 HB_DC_TOKEN 或於安裝時輸入 Token"
 fi
+# PLATFORM=4：略過即時通，不檢查 token
 
 # ══════════════════════════════════════════════════════════════
 # [5/6]  AI 模型配置
@@ -725,7 +735,9 @@ printf "${BOLD}  🎯 快速開始 / Quick Start${NC}\n"
 hr
 printf "\n  ✅ ${G}hydrabot 指令已就緒${NC}\n\n"
 printf "  您可以從任何地方執行:\n"
-printf "    ${C}hydrabot start${NC}          啟動 Bot\n"
+printf "    ${C}hydrabot${NC}                無子命令：有 TG/DC 則啟動 Bot，否則終端 CLI\n"
+printf "    ${C}hydrabot start${NC}          啟動 Bot（Telegram／Discord）\n"
+printf "    ${C}hydrabot cli${NC}            終端機互動（可不設即時通）\n"
 printf "    ${C}hydrabot update${NC}         更新到最新版本\n"
 printf "    ${C}hydrabot config${NC}         編輯設定\n"
 printf "    ${C}hydrabot status${NC}         查看狀態\n"

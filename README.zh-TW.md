@@ -43,11 +43,11 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Adaimade/HydraBot/main/insta
 1. 檢測並安裝 Python 3.10+
 2. 克隆/下載核心檔案
 3. 建立 Python 虛擬環境並安裝依賴
-4. 選擇訊息平台：**僅 Telegram**、**僅 Discord**，或**兩者並行**，再依選擇詢問 Token 與（選用）授權名單（Discord 需在 Developer Portal 開啟 **Message Content Intent**；詳見 `config.example.json` 的 `discord_*` 欄位）
+4. 選擇訊息平台：**僅 Telegram**、**僅 Discord**、**兩者並行**，或 **僅終端機 CLI**（選 4 時不問 Telegram／Discord；之後用 `hydrabot cli` 或 `python3 main.py --cli`）。若選即時通，會再依選擇詢問 Token 與（選用）授權名單（Discord 需在 Developer Portal 開啟 **Message Content Intent**；詳見 `config.example.json` 的 `discord_*` 欄位）
 5. 互動式填寫 AI API Key，並依序設定**主力 / 快速 / 日常**三組模型（可含本地 LLM）
 6. 設定全域 `hydrabot` 指令（可從任何地方使用）
 
-非互動／CI 部署可設定環境變數：`HB_PLATFORM`（`1`／`2`／`3` 或 `tg`／`dc`／`both`）、`HB_TG_TOKEN`、`HB_DC_TOKEN`，以及選用的 `HB_AUTH_USERS`、`HB_DC_AUTH_USERS`。
+非互動／CI 部署可設定環境變數：`HB_PLATFORM`（`1`／`2`／`3`／`4` 或 `tg`／`dc`／`both`／`cli`／`terminal`／`none`）、`HB_TG_TOKEN`、`HB_DC_TOKEN`，以及選用的 `HB_AUTH_USERS`、`HB_DC_AUTH_USERS`。僅 CLI 時設 `HB_PLATFORM=4`（或 `cli`）即可略過即時通 token。
 
 ### Windows (PowerShell)
 

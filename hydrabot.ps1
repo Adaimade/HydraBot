@@ -1,10 +1,11 @@
 # ═════════════════════════════════════════════════════════════
 #   HydraBot CLI (PowerShell for Windows)
-#   Usage: .\hydrabot.ps1 start [--workspace 路徑 ...]
+#   Usage: .\hydrabot.ps1 [start|cli|update|...]  無子命令則依 config 自動選 start 或 cli
 # ═════════════════════════════════════════════════════════════
 
 param(
-    [Parameter(Position = 0)][string]$Command = "help",
+    [Parameter(Position = 0)]
+    [string]$Command,
     [string]$Arg = "",
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$Rest = @()
@@ -36,6 +37,25 @@ if (Test-Path "VERSION") {
     $VER = (Get-Content "VERSION" -Raw).Trim()
 }
 
+function Get-HydrabotDefaultSubcommand {
+    param([string]$ConfigPath)
+    try {
+        $j = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $tg = [string]$j.telegram_token
+        $dc = [string]$j.discord_token
+        if ((($tg) -and ($tg -notmatch 'YOUR_')) -or (($dc) -and ($dc -notmatch 'YOUR_'))) {
+            return "start"
+        }
+        return "cli"
+    } catch {
+        return "help"
+    }
+}
+
+if ([string]::IsNullOrWhiteSpace($Command)) {
+    $Command = Get-HydrabotDefaultSubcommand -ConfigPath (Join-Path $SCRIPT_DIR "config.json")
+}
+
 # ── Commands ─────────────────────────────────────────────────
 switch ($Command.ToLower()) {
     "start" {
@@ -61,6 +81,30 @@ switch ($Command.ToLower()) {
 
         Set-Location $INVOCATION_PWD
         & $PYTHON "$SCRIPT_DIR\main.py" @Rest
+    }
+
+    "cli" {
+        if (-not (Test-Path "config.json")) {
+            Err "找不到 config.json！"
+        }
+        $raw = Get-Content "config.json" -Raw -ErrorAction SilentlyContinue
+        if ($raw -match "YOUR_MODEL_API_KEY|YOUR_GOOGLE_AI_KEY") {
+            Err "config.json 中模型仍有未填寫的預留符，請先 hydrabot config"
+        }
+        if (-not $PYTHON) {
+            Err "找不到 Python！"
+        }
+        if (-not (Test-Path "tools")) { mkdir "tools" | Out-Null }
+        if (-not (Test-Path "mcp_servers")) { mkdir "mcp_servers" | Out-Null }
+        & $PYTHON -c "import openai, anthropic" 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Inf "正在安裝依賴..."
+            & $PYTHON -m pip install -r "$SCRIPT_DIR\requirements.txt" -q --disable-pip-version-check
+        }
+        Write-Host "  HydraBot CLI 模式  工作目錄: $INVOCATION_PWD" -ForegroundColor Cyan
+        Write-Host ""
+        Set-Location $INVOCATION_PWD
+        & $PYTHON "$SCRIPT_DIR\main.py" --cli
     }
 
     "config" {
@@ -120,7 +164,9 @@ switch ($Command.ToLower()) {
         Write-Host ""
         Write-Host "  用法:" -ForegroundColor White
         Write-Host ""
+        Write-Host "  .\hydrabot.ps1             無子命令：有 TG/DC 則啟動 Bot，否則終端 CLI" -ForegroundColor Cyan
         Write-Host "  .\hydrabot.ps1 start       啟動 Bot" -ForegroundColor Cyan
+        Write-Host "  .\hydrabot.ps1 cli         終端機互動（可不設 TG/DC）" -ForegroundColor Cyan
         Write-Host "  .\hydrabot.ps1 update      更新到最新版本（保留設定）" -ForegroundColor Cyan
         Write-Host "  .\hydrabot.ps1 config      編輯 config.json" -ForegroundColor Cyan
         Write-Host "  .\hydrabot.ps1 status      查看狀態" -ForegroundColor Cyan

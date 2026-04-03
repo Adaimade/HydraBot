@@ -13,8 +13,9 @@
 - **僅 Telegram** — 填 BotFather Token 與（選用）授權使用者 ID  
 - **僅 Discord** — 填 Bot Token、（選用）授權 Snowflake ID；請在 Developer Portal 開啟 **Message Content Intent**  
 - **Telegram + Discord** — 兩邊都會詢問  
+- **僅終端機 CLI** — 不問即時通；安裝後用 `hydrabot cli`（Linux/macOS）或 `hydrabot.cmd cli`／`.\hydrabot.ps1 cli`（Windows），或 `python main.py --cli`
 
-未使用的平台在 `config.json` 裡對應 token 可留空。自動化部署可用環境變數覆寫，例如 `HB_PLATFORM`（`1` / `2` / `3` 或 `tg` / `dc` / `both`）、`HB_TG_TOKEN`、`HB_DC_TOKEN`、`HB_AUTH_USERS`、`HB_DC_AUTH_USERS`。
+未使用的平台在 `config.json` 裡對應 token 可留空。自動化部署可用環境變數覆寫，例如 `HB_PLATFORM`（`1` / `2` / `3` / `4` 或 `tg` / `dc` / `both` / `cli`）、`HB_TG_TOKEN`、`HB_DC_TOKEN`、`HB_AUTH_USERS`、`HB_DC_AUTH_USERS`。
 
 **Windows (PowerShell)：**
 ```powershell
@@ -77,7 +78,9 @@ cp config.example.json config.json
 ```bash
 # 先進入專案目錄再啟動，該目錄即成為「專案工作區」
 cd ~/你的專案
-hydrabot start      # 啟動 Bot
+hydrabot            # 無子命令：有填 TG/DC 則等同 start，否則等同 cli
+hydrabot start      # 啟動 Bot（Telegram/Discord）
+hydrabot cli        # 僅終端機互動（可不設即時通）
 hydrabot update     # 更新到最新版本（保留您的 config）
 hydrabot config     # 編輯設定
 hydrabot status     # 查看狀態
@@ -98,19 +101,24 @@ hydrabot help       # 顯示幫助
 ```powershell
 cd C:\path\to\HydraBot
 .\hydrabot.cmd start
+.\hydrabot.cmd cli
 # 或使用 PowerShell
 .\hydrabot.ps1 start
+.\hydrabot.ps1 cli
 # 或直接用 Python
 .\venv\Scripts\python.exe main.py
+.\venv\Scripts\python.exe main.py --cli
 ```
 
 **Linux / macOS：**
 ```bash
 cd /path/to/HydraBot
 ./hydrabot start
+./hydrabot cli
 # 或
 source venv/bin/activate
 python main.py
+python main.py --cli
 ```
 
 ---

@@ -43,11 +43,11 @@ The installer will automatically:
 1. Detect and install Python 3.10+
 2. Clone / download core files
 3. Create a Python virtual environment and install dependencies
-4. Ask which messengers to enable: **Telegram only**, **Discord only**, or **both** — then prompt for the relevant bot token(s) and optional user allowlists (see `config.example.json` for `discord_*` keys)
+4. Ask which messengers to enable: **Telegram only**, **Discord only**, **both**, or **terminal CLI only** (option 4 skips Telegram/Discord prompts; use `hydrabot cli` or `python3 main.py --cli`). Otherwise prompts for bot token(s) and optional allowlists (see `config.example.json` for `discord_*` keys)
 5. Interactively configure your AI API keys and **primary / fast / daily** model slots (cloud or local LLM)
 6. Set up the global `hydrabot` command (works from anywhere)
 
-Non-interactive / CI installs can set `HB_PLATFORM` (`1` / `2` / `3` or `tg` / `dc` / `both`) and `HB_TG_TOKEN` / `HB_DC_TOKEN` (and optional `HB_AUTH_USERS`, `HB_DC_AUTH_USERS`).
+Non-interactive / CI installs can set `HB_PLATFORM` (`1` / `2` / `3` / `4` or `tg` / `dc` / `both` / `cli` / `terminal` / `none`) and `HB_TG_TOKEN` / `HB_DC_TOKEN` (and optional `HB_AUTH_USERS`, `HB_DC_AUTH_USERS`). Use `HB_PLATFORM=4` or `cli` to skip messenger tokens for CLI-only use.
 
 ### Windows (PowerShell)
 

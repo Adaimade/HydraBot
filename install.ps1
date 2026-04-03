@@ -191,7 +191,7 @@ Write-Host ""
 Write-Host "  [5/6] 設定 HydraBot" -ForegroundColor White
 Hr
 
-# PLATFORM: 1=TG only, 2=DC only, 3=both — HB_PLATFORM / env inference / interactive
+# PLATFORM: 1=TG only, 2=DC only, 3=both, 4=CLI only — HB_PLATFORM / env inference / interactive
 $PLATFORM = $null
 $envPlat = $env:HB_PLATFORM
 if (-not [string]::IsNullOrWhiteSpace($envPlat)) {
@@ -199,6 +199,7 @@ if (-not [string]::IsNullOrWhiteSpace($envPlat)) {
         "^(1|tg|telegram)$" { $PLATFORM = "1" }
         "^(2|dc|discord)$"  { $PLATFORM = "2" }
         "^(3|both|all)$"    { $PLATFORM = "3" }
+        "^(4|cli|terminal|none|off)$" { $PLATFORM = "4" }
     }
 }
 if (-not $PLATFORM) {
@@ -214,11 +215,18 @@ while (-not $PLATFORM) {
     Write-Host "    1 = 僅 Telegram" -ForegroundColor DarkGray
     Write-Host "    2 = 僅 Discord" -ForegroundColor DarkGray
     Write-Host "    3 = Telegram + Discord（並行）" -ForegroundColor DarkGray
-    $p = Ask "選擇 [1/2/3，預設 1]："
+    Write-Host "    4 = 僅終端機 CLI（不要 TG/DC；之後用 python main.py --cli 或 hydrabot cli）" -ForegroundColor DarkGray
+    $p = Ask "選擇 [1/2/3/4，預設 1]："
     if ([string]::IsNullOrWhiteSpace($p)) { $p = "1" }
-    if ($p -match "^[123]$") { $PLATFORM = $p } else { Yellow "請輸入 1、2 或 3" }
+    if ($p -match "^[1234]$") { $PLATFORM = $p } else { Yellow "請輸入 1、2、3 或 4" }
 }
 Green "OK  平台模式: $PLATFORM"
+
+if ($PLATFORM -eq "4") {
+    Cyan "已選僅 CLI：將不寫入 Telegram/Discord token。"
+    Write-Host "  啟動：在專案目錄執行  hydrabot cli  或  python main.py --cli" -ForegroundColor DarkGray
+    Write-Host ""
+}
 
 $TG_TOKEN = ""
 $DC_TOKEN = ""
@@ -435,7 +443,11 @@ Write-Host ""
 # 檢查 PATH 是否設置成功
 if ($env:Path -like "*$INSTALL_DIR*") {
     Write-Host "  ✅ PATH 已設置 - 您可以從任何地方執行：" -ForegroundColor Green
-    Write-Host "    hydrabot start      # 啟動 Bot" -ForegroundColor Cyan
+    if ($PLATFORM -eq "4") {
+        Write-Host "    hydrabot cli          # 終端機互動（僅 CLI 安裝）" -ForegroundColor Cyan
+    } else {
+        Write-Host "    hydrabot start      # 啟動 Bot" -ForegroundColor Cyan
+    }
     Write-Host "    hydrabot update     # 更新版本" -ForegroundColor Cyan
     Write-Host "    hydrabot config     # 編輯設定" -ForegroundColor Cyan
     Write-Host "    hydrabot status     # 查看狀態" -ForegroundColor Cyan
@@ -450,13 +462,21 @@ if ($env:Path -like "*$INSTALL_DIR*") {
 Write-Host ""
 Write-Host "  📂 在安裝目錄中執行：" -ForegroundColor White
 Write-Host "    cd $INSTALL_DIR" -ForegroundColor Cyan
-Write-Host "    .\hydrabot.cmd start        # 啟動 Bot" -ForegroundColor Cyan
+if ($PLATFORM -eq "4") {
+    Write-Host "    .\hydrabot.cmd cli          # 終端機互動（僅 CLI）" -ForegroundColor Cyan
+} else {
+    Write-Host "    .\hydrabot.cmd start        # 啟動 Bot" -ForegroundColor Cyan
+}
 Write-Host "    .\hydrabot.cmd update       # 更新版本" -ForegroundColor Cyan
 Write-Host ""
 
 Write-Host "  🐍 或直接用 Python：" -ForegroundColor White
 Write-Host "    cd $INSTALL_DIR" -ForegroundColor Cyan
-Write-Host "    $PY main.py" -ForegroundColor Cyan
+if ($PLATFORM -eq "4") {
+    Write-Host "    $PY main.py --cli" -ForegroundColor Cyan
+} else {
+    Write-Host "    $PY main.py" -ForegroundColor Cyan
+}
 Write-Host ""
 
 Write-Host "  📖 完整說明：請查看 $INSTALL_DIR\QUICKSTART.md" -ForegroundColor Cyan

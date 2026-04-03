@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════
 #   HydraBot CLI
-#   Commands: start | update | config | status | logs | help
+#   Commands: start | cli | update | config | status | logs | help
 # ═══════════════════════════════════════════════════════════════
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -46,6 +46,33 @@ find_python() {
 
 # ── Version ───────────────────────────────────────────────────
 VER=$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null | tr -d '[:space:]') || VER="?"
+
+# ── 無子命令時：有有效 TG/DC token → start，否則 → cli，無 config → help ──
+if [[ -z "${1:-}" ]]; then
+    _def="help"
+    if [[ -f "$SCRIPT_DIR/config.json" ]]; then
+        _py=$(find_python)
+        if [[ -n "$_py" ]]; then
+            if _out=$("$_py" -c "
+import json, sys
+try:
+    d = json.load(open(sys.argv[1], encoding='utf-8'))
+except Exception:
+    sys.exit(1)
+tg = (d.get('telegram_token') or '').strip()
+dc = (d.get('discord_token') or '').strip()
+ok = lambda t: bool(t) and 'YOUR_' not in t
+print('start' if (ok(tg) or ok(dc)) else 'cli')
+" "$SCRIPT_DIR/config.json" 2>/dev/null); then
+                _line=$(printf '%s' "$_out" | tr -d '\r' | head -1)
+                if [[ "$_line" == "start" || "$_line" == "cli" ]]; then
+                    _def="$_line"
+                fi
+            fi
+        fi
+    fi
+    set -- "$_def"
+fi
 
 # ── Commands ──────────────────────────────────────────────────
 CMD="${1:-help}"
@@ -94,6 +121,30 @@ start)
 
     cd "$INVOCATION_PWD" 2>/dev/null || cd "$SCRIPT_DIR"
     exec "$PYTHON" "$SCRIPT_DIR/main.py" "${@:2}"
+    ;;
+
+# ── cli — 終端機互動（可不設 Telegram／Discord）────────────────
+cli)
+    if [[ ! -f "$SCRIPT_DIR/config.json" ]]; then
+        printf "${R}❌ 找不到 config.json！${NC}\n"
+        printf "   请先运行安装: ${C}bash install.sh${NC}\n\n"
+        exit 1
+    fi
+    if grep -q "YOUR_MODEL_API_KEY\|YOUR_GOOGLE_AI_KEY" "$SCRIPT_DIR/config.json" 2>/dev/null; then
+        printf "${Y}⚠  config.json 中模型仍有未填写的占位符！${NC}\n"
+        printf "   运行 ${C}hydrabot config${NC} 编辑。\n\n"
+        exit 1
+    fi
+    PYTHON=$(find_python)
+    [[ -z "$PYTHON" ]] && { printf "${R}❌ 找不到 Python！${NC}\n"; exit 1; }
+    mkdir -p "$SCRIPT_DIR/tools" "$SCRIPT_DIR/mcp_servers"
+    if ! "$PYTHON" -c "import openai, anthropic" &>/dev/null; then
+        printf "  ${Y}正在安装依赖，请稍候...${NC}\n"
+        "$PYTHON" -m pip install -r "$SCRIPT_DIR/requirements.txt" -q --disable-pip-version-check
+    fi
+    printf "  ${C}HydraBot CLI 模式${NC}（工作目錄: ${INVOCATION_PWD}）\n\n"
+    cd "$INVOCATION_PWD" 2>/dev/null || cd "$SCRIPT_DIR"
+    exec "$PYTHON" "$SCRIPT_DIR/main.py" --cli
     ;;
 
 # ── update ────────────────────────────────────────────────────
@@ -186,7 +237,9 @@ help|--help|-h|*)
     printf "\n${C}${BOLD}🐍 HydraBot CLI${NC}  ${DIM}v${VER}${NC}\n"
     hr
     printf "  ${BOLD}用法 / Usage:${NC}\n\n"
+    printf "  ${C}hydrabot${NC}                無子命令：有有效 TG/DC token 則等同 start，否則等同 cli\n"
     printf "  ${C}hydrabot start${NC}          启动 Bot（在當前目錄作為專案工作區；可加 --workspace 路徑）\n"
+    printf "  ${C}hydrabot cli${NC}            終端機互動（可不設 TG/DC；當前目錄為工作區）\n"
     printf "  ${C}hydrabot update${NC}         更新到最新版本\n"
     printf "  ${C}hydrabot update --force${NC} 强制更新（即使版本相同）\n"
     printf "  ${C}hydrabot config${NC}         编辑 config.json\n"
