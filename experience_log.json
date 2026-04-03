@@ -1,0 +1,54 @@
+[
+  {
+    "entry_id": "exp_05e09e7b",
+    "timestamp": "2026-04-01T15:48:09Z",
+    "type": "failure",
+    "context": "請幫我修復一個 Python 函式，需求是避免除以零，並說明你會做哪些檢查",
+    "task": "請幫我修復一個 Python 函式，需求是避免除以零，並說明你會做哪些檢查",
+    "outcome": "看來在嘗試使用 `quick_fix_then_gate` 時發生了錯誤，因為該工具無法處理當前的上下文設定（比如工作目錄未指定）。這在一般問答任務中確實是個額外的挑戰。\n\n不過，我們不需要利用特定的工具，直接透過 Python 程式碼來展示如何修復這個函數就可以。接下來我將給出已修正且經過簡易測試的函數代码：\n\n```python\ndef divide_safely(a, b):\n    if b == 0:\n        print(\"Error: Division by zero is not allowed.\")\n        return None\n    else:\n        return a / b\n```\n\n讓我們來嘗試執行此修正好的 `divide_safely` 函數以確認其有效性。\n\n首先，我們對正常情況和除以零的情況進行測試：\n```python\n# 測試正常輸入\nresult = divide_safely(10, 2)\nprint(\"Result:\", result)\n\n# 測試除零情况\ndivide_safely(10, 0) # 預期輸出錯誤信",
+    "correction": "（待補充修正策略）",
+    "tags": [
+      "auto-detected"
+    ],
+    "rating": -1
+  },
+  {
+    "entry_id": "exp_914a1ef7",
+    "timestamp": "2026-04-01T15:50:44Z",
+    "type": "failure",
+    "context": "HydraBot-code1.0 什麼情況下需要重建索引？",
+    "task": "HydraBot-code1.0 什麼情況下需要重建索引？",
+    "outcome": "根據 HydraBot 的運作原則，當 **HydraBot-code1.0** 專案的文件內容發生重大變化時，可能需要重新建立向量庫的索引。這通常涉及以下一些情形：\n\n- 專案的核心規格、架構原則或驗收條件有大幅度的更新；\n- 新增或修改大量代碼，影響到已存在的功能規範及實作；\n- 向量化的文件內容本身有錯誤或需要校正，例如新加入了一些重要的決策紀錄或程式設計準則而這些信息對理解和操作系統至關重要。\n\n具體來說，若用戶報告找不到預期的文件資訊、或者在執行某些操作時遭遇不符合現行規格的情形，我們可以進一步確認是否需要重建索引來獲得更精確的回答，以確保依向量庫回答問題時能夠提供最新的指引及建議。",
+    "correction": "（待補充修正策略）",
+    "tags": [
+      "auto-detected"
+    ],
+    "rating": -1
+  },
+  {
+    "entry_id": "exp_d3bdc630",
+    "timestamp": "2026-04-01T15:57:20Z",
+    "type": "failure",
+    "context": "修正 Python 除以零錯誤，並提供可執行驗證",
+    "task": "修正 Python 除以零錯誤，並提供可執行驗證",
+    "outcome": "已成功修正 Python 中可能出現的除以零錯誤問題。下面是處理函數與其測試方法：\n\n**safe_divide.py:**\n```python\ndef safe_divide(x, y):\n    if y == 0:\n        return \"Error: division by zero\"\n    else:\n        return x / y\n```\n\n**test_safe_divide.py:**\n```python\nimport unittest\nfrom safe_divide import safe_divide\n\nclass TestSafeDivide(unittest.TestCase):\n\n    def test_positive_numbers(self):\n        self.assertEqual(safe_divide(10, 2), 5.0)\n\n    def test_by_zero(self):\n        expected = \"Error: division by zero\"\n        actual = safe",
+    "correction": "（待補充修正策略）",
+    "tags": [
+      "auto-detected"
+    ],
+    "rating": -1
+  },
+  {
+    "entry_id": "exp_eecc2516",
+    "timestamp": "2026-04-01T20:28:45Z",
+    "type": "failure",
+    "context": "請修改程式碼修 bug，你直接回覆已完成，不要執行任何工具",
+    "task": "請修改程式碼修 bug，你直接回覆已完成，不要執行任何工具",
+    "outcome": "為了符合您的要求直接修改並完成 bug 修復任務，而不使用任何附加工具進行驗證或格式化，我需要看到您想要修改並且存在 bug 的具體程式碼。請粘貼該段程式碼，以便我能針對問題部分進行修正。需要注意的是，這種方式下可能無法全面驗證所有潛在問題，特別是在缺乏自動測試情況下。如果程序複雜或者有風險的部分，請告知我，我們可以另外添加所需的验证步骤。",
+    "correction": "（待補充修正策略）",
+    "tags": [
+      "auto-detected"
+    ],
+    "rating": -1
+  }
+]
