@@ -23,6 +23,14 @@ if TYPE_CHECKING:
 current_session_id = [None]
 
 
+def _install_dir(agent: "Agent") -> Path:
+    return Path(getattr(agent, "install_dir", Path.cwd())).resolve()
+
+
+def _workspace_dir(agent: "Agent") -> Path:
+    return Path(getattr(agent, "workspace_dir", _install_dir(agent))).resolve()
+
+
 def get_builtin_tools(agent: "Agent") -> list:
     """Return [(name, schema_dict, function), ...]"""
 
@@ -59,13 +67,14 @@ def get_builtin_tools(agent: "Agent") -> list:
     def execute_shell(command: str, timeout: int = 30, cwd: str = None) -> str:
         """Execute a shell command and return stdout/stderr."""
         try:
+            shell_cwd = cwd if cwd is not None else str(_workspace_dir(agent))
             r = subprocess.run(
                 command,
                 shell=True,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                cwd=cwd,
+                cwd=shell_cwd,
             )
             parts = []
             if r.stdout.strip():
@@ -85,7 +94,7 @@ def get_builtin_tools(agent: "Agent") -> list:
 
     def read_file(path: str, offset: int = 0, limit: int = 200) -> str:
         try:
-            p = Path(path)
+            p = agent.resolve_workspace_path(path)
             if not p.exists():
                 return f"❌ 檔案不存在: {path}"
             lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -94,7 +103,7 @@ def get_builtin_tools(agent: "Agent") -> list:
             excerpt = "\n".join(
                 f"{i + offset + 1:4d} | {l}" for i, l in enumerate(lines[offset:end])
             )
-            header = f"📄 {path}  （第 {offset+1}–{end} 行 / 共 {total} 行）\n"
+            header = f"📄 {p}  （第 {offset+1}–{end} 行 / 共 {total} 行）\n"
             return header + f"```\n{excerpt}\n```"
         except Exception as e:
             return f"❌ {e}"
@@ -105,11 +114,11 @@ def get_builtin_tools(agent: "Agent") -> list:
 
     def write_file(path: str, content: str, mode: str = "w") -> str:
         try:
-            p = Path(path)
+            p = agent.resolve_workspace_path(path)
             p.parent.mkdir(parents=True, exist_ok=True)
             with p.open(mode, encoding="utf-8") as f:
                 f.write(content)
-            return f"✅ 已寫入 {path}（{p.stat().st_size:,} bytes）"
+            return f"✅ 已寫入 {p}（{p.stat().st_size:,} bytes）"
         except Exception as e:
             return f"❌ {e}"
 
@@ -119,7 +128,7 @@ def get_builtin_tools(agent: "Agent") -> list:
 
     def list_files(path: str = ".", pattern: str = "*", max_items: int = 60) -> str:
         try:
-            p = Path(path)
+            p = agent.resolve_workspace_path(path)
             if not p.exists():
                 return f"❌ 路徑不存在: {path}"
             items = sorted(p.glob(pattern))[:max_items]
@@ -178,7 +187,7 @@ def get_builtin_tools(agent: "Agent") -> list:
         if tool_name in agent.tools or tool_name in _SESSION_TOOL_NAMES:
             return f"❌ 工具名 `{tool_name}` 與內建工具衝突，請換一個名稱"
 
-        tools_dir = Path("tools")
+        tools_dir = _install_dir(agent) / "tools"
         tools_dir.mkdir(exist_ok=True)
         path = tools_dir / f"{tool_name}.py"
 
@@ -266,7 +275,7 @@ def get_builtin_tools(agent: "Agent") -> list:
 
     def create_mcp_server(server_name: str, server_code: str) -> str:
         """Write an MCP server script to mcp_servers/."""
-        mcp_dir = Path("mcp_servers")
+        mcp_dir = _install_dir(agent) / "mcp_servers"
         mcp_dir.mkdir(exist_ok=True)
         path = mcp_dir / f"{server_name}.py"
         try:
@@ -465,7 +474,7 @@ def get_builtin_tools(agent: "Agent") -> list:
 
     def edit_soul(content: str = None, action: str = "get") -> str:
         """Read or write the bot's persona file (SOUL.md)."""
-        soul_file = Path("SOUL.md")
+        soul_file = _install_dir(agent) / "SOUL.md"
 
         if action == "get":
             if not soul_file.exists():
@@ -633,6 +642,7 @@ def get_builtin_tools(agent: "Agent") -> list:
             "name": "execute_shell",
             "description": (
                 "執行 Shell 命令（git、npm、系統工具等）。\n"
+                "未指定 cwd 時，預設在**專案工作區**（與 read_file 相對路徑根目錄相同）。\n"
                 "Windows（cmd）沒有 pwd/ls：查目前目錄用 `cd`，列出目錄用 `dir`；"
                 "macOS/Linux 可用 `pwd`、`ls`。"
             ),
@@ -641,7 +651,7 @@ def get_builtin_tools(agent: "Agent") -> list:
                 "properties": {
                     "command": {"type": "string", "description": "完整一行 Shell 命令（例：dir、cd、git status）"},
                     "timeout":  {"type": "integer", "description": "逾時秒數（預設 30）"},
-                    "cwd":      {"type": "string",  "description": "工作目錄（可選）"},
+                    "cwd":      {"type": "string",  "description": "工作目錄（可選；省略則使用專案工作區）"},
                 },
                 "required": ["command"],
             },

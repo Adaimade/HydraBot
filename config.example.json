@@ -1,6 +1,9 @@
 {
   "_註解": "複製此檔案為 config.json 並填入你的憑證",
 
+  "_註解_workspace": "專案工作區由啟動方式決定：在專案目錄執行 hydrabot start（或 python main.py）時，相對路徑工具預設在此目錄。可覆寫：環境變數 HYDRABOT_WORKSPACE，或 python main.py --workspace /path/to/project",
+  "_註解_install_vs_workspace": "程式會自動寫入 _hydrabot_install_dir / _hydrabot_workspace_dir（勿手動刪；config 與動態 tools 永遠在安裝目錄）",
+
   "_註解_code1_rag": "本地 RAG：HydraBot-code1.0 專案根目錄絕對路徑；留空則停用 code1_rag_query。需 pip install -r requirements_rag.txt 且 Ollama 可用",
   "hydrabot_code1_root": "",
 
@@ -24,6 +27,9 @@
   "enforce_gate_policy": true,
   "gate_forbidden_in_qa": true,
   "require_gate_before_done": true,
+
+  "_註解_cli_ui": "僅 python main.py --cli：精簡工具列印（● Bash、階層線、長輸出摺疊）。設 false 還原舊版 🔧 日誌",
+  "cli_compact_ui": true,
 
   "_註解_model_roles": "三層模型角色對應（填 models 陣列的索引）：primary=主力、fast=快速、daily=日常",
   "model_roles": {

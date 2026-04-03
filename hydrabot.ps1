@@ -1,11 +1,17 @@
 # ═════════════════════════════════════════════════════════════
 #   HydraBot CLI (PowerShell for Windows)
-#   Usage: .\hydrabot.ps1 start
+#   Usage: .\hydrabot.ps1 start [--workspace 路徑 ...]
 # ═════════════════════════════════════════════════════════════
 
-param([string]$Command = "help", [string]$Arg = "")
+param(
+    [Parameter(Position = 0)][string]$Command = "help",
+    [string]$Arg = "",
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$Rest = @()
+)
 
 $SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
+$INVOCATION_PWD = (Get-Location).Path
 Set-Location $SCRIPT_DIR
 
 # ── Find Python (prefer venv) ────────────────────────────────
@@ -50,9 +56,11 @@ switch ($Command.ToLower()) {
         if (-not (Test-Path "mcp_servers")) { mkdir "mcp_servers" | Out-Null }
 
         Write-Host "  啟動中..." -ForegroundColor White
+        Write-Host "  工作目錄: $INVOCATION_PWD" -ForegroundColor DarkGray
         Write-Host ""
 
-        & $PYTHON "$SCRIPT_DIR\main.py"
+        Set-Location $INVOCATION_PWD
+        & $PYTHON "$SCRIPT_DIR\main.py" @Rest
     }
 
     "config" {
@@ -85,14 +93,19 @@ switch ($Command.ToLower()) {
 
     "update" {
         if (Test-Path "scripts\update.ps1") {
-            & "scripts\update.ps1" $Arg
+            if ($Rest.Count -gt 0) {
+                & "scripts\update.ps1" @Rest
+            } else {
+                & "scripts\update.ps1" $Arg
+            }
         } else {
             Err "scripts\update.ps1 not found"
         }
     }
 
     "logs" {
-        $lines = if ($Arg -and $Arg -match "^\d+$") { [int]$Arg } else { 50 }
+        $tail = if ($Rest.Count -gt 0) { $Rest[0] } else { $Arg }
+        $lines = if ($tail -and $tail -match "^\d+$") { [int]$tail } else { 50 }
         if (Test-Path "hydrabot.log") {
             Get-Content "hydrabot.log" -Tail $lines
         } else {

@@ -294,7 +294,7 @@ echo ""
 # [3/6]  下载核心文件
 # ══════════════════════════════════════════════════════════════
 step "[3/6] 下載核心檔案"
-CORE_FILES=(agent.py bot.py main.py cli.py discord_bot.py learning.py tools_builtin.py scheduler.py sub_agent_manager.py requirements.txt scripts/update.sh scripts/start.sh hydrabot VERSION)
+CORE_FILES=(agent.py bot.py main.py cli.py cli_render.py discord_bot.py learning.py tools_builtin.py scheduler.py sub_agent_manager.py requirements.txt scripts/update.sh scripts/start.sh hydrabot VERSION)
 FAILED_DL=()
 for f in "${CORE_FILES[@]}"; do
     printf "  %-28s " "$f"

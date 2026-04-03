@@ -142,6 +142,8 @@ CLI 內建指令：
 - `/tools`
 - `/quit`（或 `/exit`）
 
+**終端機介面**：預設啟用精簡輸出（`cli_compact_ui`，見 `config.example.json`）— 工具列以 `● Bash(…)` 階層顯示、長輸出摺疊、子代理推送以邊框區隔，體驗對齊 Claude Code CLI 類型。`cli_compact_ui: false` 可還原舊版；`NO_COLOR=1` 關閉 ANSI。
+
 ---
 
 ## 設定檔 config.json

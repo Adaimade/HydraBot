@@ -7,6 +7,7 @@ setlocal enabledelayedexpansion
 
 REM Get installation directory (where this script is located)
 set "INSTALL_DIR=%~dp0"
+set "INVOCATION_PWD=%CD%"
 cd /d "%INSTALL_DIR%"
 
 REM Find Python in venv first
@@ -40,7 +41,10 @@ if "!CMD!"=="start" (
         echo [ERROR] config.json not found. Please run install.ps1 first.
         exit /b 1
     )
-    "%PYTHON%" "%INSTALL_DIR%main.py"
+    cd /d "!INVOCATION_PWD!" 2>nul
+    if errorlevel 1 cd /d "!INSTALL_DIR!"
+    shift
+    "%PYTHON%" "%INSTALL_DIR%main.py" %*
     exit /b !ERRORLEVEL!
 ) else if "!CMD!"=="config" (
     if exist "config.json" (

@@ -21,6 +21,11 @@ from typing import Any
 from scheduler import NotificationScheduler, parse_fire_at, REPEAT_INTERVALS
 from learning import ExperienceLog, is_likely_failure
 
+try:
+    import cli_render  # CLI 精簡輸出（可選；缺失時不影響 TG/DC）
+except ImportError:
+    cli_render = None  # type: ignore[misc, assignment]
+
 
 # Maximum number of tool-call iterations per agent loop turn
 MAX_TOOL_CALLS = 30
@@ -112,6 +117,13 @@ class AgentPool:
         Telegram 預設為 \"\"（memory.json、schedules.json、timezones.json）。
         """
         self.config = config
+        _here = Path(__file__).resolve().parent
+        self.install_dir = Path(
+            config.get("_hydrabot_install_dir") or str(_here)
+        ).resolve()
+        self.workspace_dir = Path(
+            config.get("_hydrabot_workspace_dir") or str(self.install_dir)
+        ).resolve()
         # Tool trace switches:
         # - tool_trace_stdout: print each tool call/result to process stdout
         # - tool_trace_to_chat: also push concise trace lines back to current chat session
@@ -120,12 +132,15 @@ class AgentPool:
         self.enforce_gate_policy = bool(config.get("enforce_gate_policy", True))
         self.gate_forbidden_in_qa = bool(config.get("gate_forbidden_in_qa", True))
         self.require_gate_before_done = bool(config.get("require_gate_before_done", True))
+        # CLI 專用：精簡工具列印（類 Claude Code 階層／摺疊）
+        self.cli_compact_ui = bool(config.get("cli_compact_ui", True))
         self._data_prefix = data_prefix or ""
-        self._memory_path = (
-            Path(f"{self._data_prefix}memory.json")
+        _mem = (
+            f"{self._data_prefix}memory.json"
             if self._data_prefix
-            else Path("memory.json")
+            else "memory.json"
         )
+        self._memory_path = self.install_dir / _mem
         self.max_tokens = config.get("max_tokens", 4096)
         self.max_history = config.get("max_history", 50)
 
@@ -176,25 +191,48 @@ class AgentPool:
             if self._data_prefix
             else "schedules.json"
         )
-        self.scheduler = NotificationScheduler(schedules_file=Path(_sched_name))
+        self.scheduler = NotificationScheduler(
+            schedules_file=self.install_dir / _sched_name
+        )
 
         # User timezone offsets  { session_id -> UTC offset hours (int) }
         # e.g. UTC+8 → 8,  UTC-5 → -5
         self.user_timezones: dict[tuple, int] = {}
-        self._tz_file = (
-            Path(f"{self._data_prefix}timezones.json")
+        _tz_name = (
+            f"{self._data_prefix}timezones.json"
             if self._data_prefix
-            else Path("timezones.json")
+            else "timezones.json"
         )
+        self._tz_file = self.install_dir / _tz_name
         self._load_timezones()
 
         # 學習回路：結構化長期記憶 + TF-IDF 語意檢索
         _exp_name = f"{self._data_prefix}experience_log.json"
-        self.experience = ExperienceLog(log_path=Path(_exp_name))
+        self.experience = ExperienceLog(log_path=self.install_dir / _exp_name)
 
         # Load tools
         self._load_builtin_tools()
         self._load_dynamic_tools()
+
+    @staticmethod
+    def _is_cli_session(session_id) -> bool:
+        """終端機模式固定 session (0, None)。"""
+        return session_id == (0, None)
+
+    def _use_compact_cli_trace(self, session_id) -> bool:
+        return (
+            cli_render is not None
+            and self.cli_compact_ui
+            and self._is_cli_session(session_id)
+            and self.tool_trace_stdout
+        )
+
+    def resolve_workspace_path(self, path: str) -> Path:
+        """相對路徑以 workspace_dir 為根；絕對路徑不變。"""
+        p = Path(path).expanduser()
+        if p.is_absolute():
+            return p.resolve()
+        return (self.workspace_dir / p).resolve()
 
     GATE_TOOL_NAMES = {
         "quick_fix_then_gate",
@@ -1293,9 +1331,12 @@ class AgentPool:
 
     def _emit_tool_trace(self, session_id, text: str) -> None:
         """Emit tool trace to stdout and optionally to chat."""
-        if self.tool_trace_stdout:
+        if self.tool_trace_stdout and not self._use_compact_cli_trace(session_id):
             print(text)
         if not self.tool_trace_to_chat:
+            return
+        # CLI 已在 stdout 精簡列印，避免 [推送] 洗版
+        if self._is_cli_session(session_id):
             return
         if session_id is None or not self._send_func or not self._loop:
             return
@@ -1357,12 +1398,18 @@ class AgentPool:
                 results = []
                 for block in resp.content:
                     if block.type == "tool_use":
-                        self._emit_tool_trace(
-                            session_id,
-                            f"🔧 {block.name}({json.dumps(block.input, ensure_ascii=False)[:160]})",
-                        )
+                        if self._use_compact_cli_trace(session_id) and cli_render:
+                            cli_render.print_tool_start(block.name, block.input)
+                        else:
+                            self._emit_tool_trace(
+                                session_id,
+                                f"🔧 {block.name}({json.dumps(block.input, ensure_ascii=False)[:160]})",
+                            )
                         result = self._call_tool(block.name, block.input, tools_dict, turn_state)
-                        self._emit_tool_trace(session_id, f"   → {str(result)[:180]}")
+                        if self._use_compact_cli_trace(session_id) and cli_render:
+                            cli_render.print_tool_result(block.name, result)
+                        else:
+                            self._emit_tool_trace(session_id, f"   → {str(result)[:180]}")
                         results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
@@ -1424,12 +1471,18 @@ class AgentPool:
                         result = f"❌ 無法解析工具參數（JSON）: {raw_args[:300]}"
                         args = {}
                     else:
-                        self._emit_tool_trace(
-                            session_id,
-                            f"🔧 {tc.function.name}({str(args)[:160]})",
-                        )
+                        if self._use_compact_cli_trace(session_id) and cli_render:
+                            cli_render.print_tool_start(tc.function.name, args)
+                        else:
+                            self._emit_tool_trace(
+                                session_id,
+                                f"🔧 {tc.function.name}({str(args)[:160]})",
+                            )
                         result = self._call_tool(tc.function.name, args, tools_dict, turn_state)
-                        self._emit_tool_trace(session_id, f"   → {str(result)[:180]}")
+                        if self._use_compact_cli_trace(session_id) and cli_render:
+                            cli_render.print_tool_result(tc.function.name, result)
+                        else:
+                            self._emit_tool_trace(session_id, f"   → {str(result)[:180]}")
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
@@ -1446,7 +1499,7 @@ class AgentPool:
 
     def _load_soul(self) -> str:
         """Load SOUL.md persona file. Returns empty string if not set."""
-        soul_file = Path("SOUL.md")
+        soul_file = self.install_dir / "SOUL.md"
         if not soul_file.exists():
             return ""
         try:
@@ -1477,6 +1530,14 @@ class AgentPool:
             cur_info = "（子代理模式）"
             tz_info = ""
 
+        path_info = (
+            f"\n## 目錄脈絡（與 Claude Code 類似：可在任意專案夾啟動）\n"
+            f"- **專案工作區**（`read_file` / `write_file` / `list_files` 相對路徑、"
+            f"`execute_python`、`execute_shell` 未指定 cwd 時）: `{self.workspace_dir}`\n"
+            f"- **HydraBot 安裝目錄**（config.json、動態 `tools/`、`mcp_servers/`、記憶檔）: "
+            f"`{self.install_dir}`\n"
+        )
+
         model_list = "\n".join(
             f"- 模型 {i}: **{m.get('name', m['model'])}** ({m['provider']}/{m['model']}) {m.get('description', '')}"
             for i, m in enumerate(self.model_configs)
@@ -1501,7 +1562,7 @@ class AgentPool:
 ## 目前使用
 {cur_info}
 {tz_info}
-
+{path_info}
 ## 可用模型池
 {model_list}
 
@@ -1573,7 +1634,7 @@ class AgentPool:
         print(f"✅ 已載入 {len(self.tools)} 個內建工具")
 
     def _load_dynamic_tools(self):
-        tools_dir = Path("tools")
+        tools_dir = self.install_dir / "tools"
         tools_dir.mkdir(exist_ok=True)
         count = 0
         for tool_file in sorted(tools_dir.glob("*.py")):

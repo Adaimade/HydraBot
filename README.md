@@ -142,6 +142,8 @@ CLI built-in commands:
 - `/tools`
 - `/quit` (or `/exit`)
 
+**Terminal UX**: With `cli_compact_ui` (default `true` in `config.example.json`), tool runs render as compact blocks (`● Bash(…)`, tree lines, folded long output) and sub-agent pushes use a framed block—closer to Claude Code CLI. Set `cli_compact_ui: false` for the legacy trace style; `NO_COLOR=1` disables ANSI.
+
 ---
 
 ## Configuration: config.json

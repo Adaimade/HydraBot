@@ -3,10 +3,34 @@
 HydraBot - Self-expanding AI Assistant via Telegram
 """
 
+from __future__ import annotations
+
 import json
+import os
 import sys
 import asyncio
 from pathlib import Path
+
+
+def _parse_workspace_argv(argv: list[str]) -> tuple[Path | None, list[str]]:
+    """自 argv 移除 --workspace / -w / --workdir，回傳 (絕對路徑或 None, 新 argv)。"""
+    workspace: str | None = None
+    out: list[str] = [argv[0]] if argv else []
+    i = 1
+    while i < len(argv):
+        a = argv[i]
+        if a in ("--workspace", "-w", "--workdir") and i + 1 < len(argv):
+            workspace = argv[i + 1]
+            i += 2
+            continue
+        if a.startswith("--workspace="):
+            workspace = a.split("=", 1)[1]
+            i += 1
+            continue
+        out.append(a)
+        i += 1
+    ws = Path(workspace).expanduser().resolve() if workspace else None
+    return ws, out
 
 
 # ══════════════════════════════════════════════════════════════
@@ -41,10 +65,12 @@ def _discord_configured(config: dict) -> bool:
     return bool(t) and "YOUR_DISCORD_BOT_TOKEN" not in t
 
 
-def load_config(*, allow_without_messengers: bool = False) -> dict:
+def load_config(
+    config_path: Path,
+    *,
+    allow_without_messengers: bool = False,
+) -> dict:
     """allow_without_messengers: True 時不強制設定 telegram_token / discord_token（供 CLI 模式使用）。"""
-    config_path = Path("config.json")
-
     if not config_path.exists():
         template = {
             "telegram_token": "YOUR_TELEGRAM_BOT_TOKEN",
@@ -57,8 +83,9 @@ def load_config(*, allow_without_messengers: bool = False) -> dict:
             "max_tokens": 4096,
             "max_history": 50,
         }
+        config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(json.dumps(template, indent=2, ensure_ascii=False))
-        print("✅ 已建立 config.json")
+        print(f"✅ 已建立 {config_path}")
         print("   請填寫您的憑證後重新執行。")
         sys.exit(0)
 
@@ -105,18 +132,39 @@ def _wants_cli(argv: list[str]) -> bool:
 
 
 def main():
-    # Set working directory to the installation directory (where config.json is)
-    # This ensures relative paths in tools work correctly
-    script_dir = Path(__file__).parent
-    import os
-    os.chdir(script_dir)
+    install_dir = Path(__file__).resolve().parent
+
+    ws_arg, argv_clean = _parse_workspace_argv(sys.argv)
+    sys.argv = argv_clean
 
     # Windows asyncio compatibility
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
     cli_mode = _wants_cli(sys.argv)
-    config = load_config(allow_without_messengers=cli_mode)
+
+    env_ws = (os.environ.get("HYDRABOT_WORKSPACE") or "").strip()
+    if ws_arg is not None:
+        workspace_dir = ws_arg
+    elif env_ws:
+        workspace_dir = Path(env_ws).expanduser().resolve()
+    else:
+        # 與 Claude Code CLI 類似：預設使用「啟動時的當前目錄」（hydrabot 啟動器會先還原呼叫時的 pwd）
+        workspace_dir = Path.cwd().resolve()
+
+    if not workspace_dir.is_dir():
+        print(f"❌ 工作目錄不存在或不是目錄: {workspace_dir}")
+        sys.exit(1)
+
+    config_path = install_dir / "config.json"
+    config = load_config(config_path, allow_without_messengers=cli_mode)
+    config["_hydrabot_install_dir"] = str(install_dir)
+    config["_hydrabot_workspace_dir"] = str(workspace_dir)
+
+    os.chdir(workspace_dir)
+    if workspace_dir != install_dir.resolve():
+        print(f"📂 工作區（檔案／shell／Python 相對路徑）: {workspace_dir}")
+        print(f"📦 HydraBot 安裝與 config: {install_dir}\n")
 
     if cli_mode:
         from cli import run_cli

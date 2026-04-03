@@ -64,12 +64,19 @@ cp config.example.json config.json
 
 ## 🎯 啟動 HydraBot
 
+### 專案工作區（與 Claude Code CLI 類似）
+
+在**你要操作的專案目錄**先 `cd` 過去，再執行 `hydrabot start`，則 `read_file`、`write_file`、`execute_shell`（未指定 cwd）、`execute_python` 的相對路徑都會以該目錄為根；`config.json` 與動態 `tools/` 仍讀寫於 HydraBot **安裝目錄**。
+
+覆寫方式：`HYDRABOT_WORKSPACE=/某路徑`，或 `python /path/to/hydrabot/main.py --workspace /某路徑`（亦支援 `-w`、`--workdir`）。
+
 ### ✅ 最推薦：從任何地方執行
 
 安裝腳本會自動添加 HydraBot 到 PATH，所以您可以**從任何目錄**執行：
 
 ```bash
-# 任何地方都可以執行，腳本會自動找到安裝目錄
+# 先進入專案目錄再啟動，該目錄即成為「專案工作區」
+cd ~/你的專案
 hydrabot start      # 啟動 Bot
 hydrabot update     # 更新到最新版本（保留您的 config）
 hydrabot config     # 編輯設定

@@ -6,6 +6,7 @@ REM ═════════════════════════�
 setlocal enabledelayedexpansion
 
 set "SCRIPT_DIR=%~dp0"
+set "INVOCATION_PWD=%CD%"
 cd /d "%SCRIPT_DIR%"
 
 REM ── Find Python (prefer venv) ─────────────────────────────────
@@ -108,8 +109,12 @@ if errorlevel 1 (
 )
 
 echo   啟動中...
+echo   工作目錄: %INVOCATION_PWD%
 echo.
-%PYTHON% "%SCRIPT_DIR%main.py"
+cd /d "%INVOCATION_PWD%" 2>nul
+if errorlevel 1 cd /d "%SCRIPT_DIR%"
+shift
+%PYTHON% "%SCRIPT_DIR%main.py" %*
 goto :end
 
 REM ═════════════════════════════════════════════════════════════

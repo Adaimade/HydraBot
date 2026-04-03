@@ -142,7 +142,7 @@ Write-Host ""
 Write-Host "  [3/6] 下載核心檔案" -ForegroundColor White
 Hr
 
-$coreFiles = @("agent.py","bot.py","main.py","cli.py","discord_bot.py","learning.py","tools_builtin.py","scheduler.py","sub_agent_manager.py","requirements.txt","hydrabot","hydrabot.bat","VERSION")
+$coreFiles = @("agent.py","bot.py","main.py","cli.py","cli_render.py","discord_bot.py","learning.py","tools_builtin.py","scheduler.py","sub_agent_manager.py","requirements.txt","hydrabot","hydrabot.bat","VERSION")
 $scriptFiles = @("scripts/update.sh","scripts/update.ps1","scripts/start.sh")
 $failed = @()
 

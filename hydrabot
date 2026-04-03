@@ -5,6 +5,8 @@
 # ═══════════════════════════════════════════════════════════════
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# 保留使用者執行 hydrabot 時的目錄，供 main.py 作為專案工作區（與 Claude Code CLI 類似）
+INVOCATION_PWD="$(pwd)"
 cd "$SCRIPT_DIR"
 
 # ── Colors ────────────────────────────────────────────────────
@@ -87,9 +89,11 @@ start)
     fi
 
     printf "  Python:  $($PYTHON --version)\n"
-    printf "  目录:    $SCRIPT_DIR\n\n"
+    printf "  安裝目錄: $SCRIPT_DIR\n"
+    printf "  工作目錄: $INVOCATION_PWD\n\n"
 
-    exec "$PYTHON" "$SCRIPT_DIR/main.py"
+    cd "$INVOCATION_PWD" 2>/dev/null || cd "$SCRIPT_DIR"
+    exec "$PYTHON" "$SCRIPT_DIR/main.py" "${@:2}"
     ;;
 
 # ── update ────────────────────────────────────────────────────
@@ -182,7 +186,7 @@ help|--help|-h|*)
     printf "\n${C}${BOLD}🐍 HydraBot CLI${NC}  ${DIM}v${VER}${NC}\n"
     hr
     printf "  ${BOLD}用法 / Usage:${NC}\n\n"
-    printf "  ${C}hydrabot start${NC}          启动 Bot\n"
+    printf "  ${C}hydrabot start${NC}          启动 Bot（在當前目錄作為專案工作區；可加 --workspace 路徑）\n"
     printf "  ${C}hydrabot update${NC}         更新到最新版本\n"
     printf "  ${C}hydrabot update --force${NC} 强制更新（即使版本相同）\n"
     printf "  ${C}hydrabot config${NC}         编辑 config.json\n"

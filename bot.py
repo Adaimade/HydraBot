@@ -109,8 +109,11 @@ class TelegramBot:
         return user_id in self.authorized_users
 
     def _save_whitelist(self):
-        """Persist authorized_users back to config.json (CWD-relative)."""
-        config_path = Path("config.json")
+        """Persist authorized_users back to config.json（安裝目錄）。"""
+        inst = self.config.get("_hydrabot_install_dir")
+        config_path = (
+            Path(inst) / "config.json" if inst else Path("config.json")
+        )
         try:
             data = json.loads(config_path.read_text(encoding="utf-8-sig"))
             data["authorized_users"] = sorted(self.authorized_users)

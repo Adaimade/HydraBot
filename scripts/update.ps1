@@ -99,7 +99,7 @@ $OLD_TOOLS = if (Test-Path "tools_builtin.py") {
 Write-Host "  📥 下載更新..."
 Hr
 
-$CORE_FILES = @("agent.py","bot.py","main.py","cli.py","discord_bot.py","learning.py","tools_builtin.py","scheduler.py","requirements.txt","scripts/update.ps1","hydrabot.cmd","VERSION")
+$CORE_FILES = @("agent.py","bot.py","main.py","cli.py","cli_render.py","discord_bot.py","learning.py","tools_builtin.py","scheduler.py","requirements.txt","scripts/update.ps1","hydrabot.cmd","VERSION")
 $FAILED = @()
 
 New-Item -ItemType Directory -Force -Path "scripts" | Out-Null
