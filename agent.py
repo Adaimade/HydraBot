@@ -165,6 +165,30 @@ class AgentPool:
         self.require_gate_before_done = bool(config.get("require_gate_before_done", True))
         # CLI 專用：精簡工具列印（類 Claude Code 階層／摺疊）
         self.cli_compact_ui = bool(config.get("cli_compact_ui", True))
+
+        # 安全權限
+        _pm = str(config.get("permission_mode", "auto")).lower().strip()
+        if _pm not in ("default", "auto", "readonly"):
+            _pm = "auto"
+        self.permission_mode: str = _pm
+        self.denied_commands: list[str] = [
+            s.lower().strip() for s in config.get("denied_commands", []) if s
+        ]
+        self.denied_paths: list[str] = [
+            str(Path(s).expanduser().resolve())
+            for s in config.get("denied_paths", []) if s
+        ]
+        self._cli_approval_callback = None  # set by cli.py for interactive y/n
+        self._stream_callback = None  # set by cli.py: callback(chunk_str | None=flush)
+
+        # Token 追蹤
+        self._token_usage: dict[str, int] = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "api_calls": 0,
+        }
+        self._session_token_usage: dict[tuple, dict[str, int]] = {}
+        self._usage_lock = threading.Lock()
         self._data_prefix = data_prefix or ""
         _mem = (
             f"{self._data_prefix}memory.json"
@@ -552,6 +576,8 @@ class AgentPool:
         if len(history) > self.max_history:
             self.conversations[session_id] = history[-self.max_history:]
 
+        self._maybe_compact_context(session_id)
+
         # 失敗自動記錄：偵測到錯誤訊號時寫入經驗庫，供下次 recall 參考
         if is_likely_failure(response):
             try:
@@ -562,11 +588,150 @@ class AgentPool:
             except Exception:
                 pass
 
+        self.save_session(session_id)
         return response
+
+    # ─────────────────────────────────────────────
+    # Context compaction
+    # ─────────────────────────────────────────────
+
+    def _maybe_compact_context(self, session_id):
+        """當 history 達到 max_history 的 80% 時，將前半段壓縮成摘要。"""
+        history = self.conversations.get(session_id)
+        if not history:
+            return
+        threshold = int(self.max_history * 0.8)
+        if len(history) < threshold:
+            return
+
+        keep_recent = max(6, self.max_history // 4)
+        old_part = history[:-keep_recent]
+        if len(old_part) < 4:
+            return
+
+        summary_text = self._summarize_messages(old_part, session_id)
+        if not summary_text:
+            return
+
+        compact_msg = {
+            "role": "user",
+            "content": (
+                "[系統摘要] 以下是先前對話的精簡摘要，原始對話已壓縮以節省 token：\n\n"
+                f"{summary_text}"
+            ),
+        }
+        self.conversations[session_id] = [compact_msg] + history[-keep_recent:]
+
+    def _summarize_messages(self, messages: list[dict], session_id) -> str | None:
+        """用快速模型將多條訊息壓縮為摘要。"""
+        try:
+            fast_idx = self.model_roles.get("fast", self.model_roles.get("daily", 0))
+            client = self.get_client(fast_idx)
+
+            text_parts = []
+            for m in messages:
+                role = m.get("role", "?")
+                content = str(m.get("content", ""))
+                if len(content) > 300:
+                    content = content[:300] + "…"
+                text_parts.append(f"[{role}] {content}")
+
+            combined = "\n".join(text_parts)
+            if len(combined) > 6000:
+                combined = combined[:6000] + "\n…（已截斷）"
+
+            prompt = (
+                "請將以下多輪對話壓縮為重點摘要（繁體中文），保留關鍵決策、已完成事項、"
+                "待辦事項、重要數據。用簡潔列點呈現，不超過 500 字：\n\n"
+                f"{combined}"
+            )
+
+            if client.provider == "anthropic":
+                resp = client.client.messages.create(
+                    model=client.model,
+                    max_tokens=600,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                if hasattr(resp, "usage") and resp.usage:
+                    self._record_usage(session_id,
+                        getattr(resp.usage, "input_tokens", 0),
+                        getattr(resp.usage, "output_tokens", 0))
+                return resp.content[0].text if resp.content else None
+            else:
+                resp = client.client.chat.completions.create(
+                    model=client.model,
+                    max_tokens=600,
+                    messages=[
+                        {"role": "system", "content": "你是摘要助手。"},
+                        {"role": "user", "content": prompt},
+                    ],
+                )
+                if hasattr(resp, "usage") and resp.usage:
+                    self._record_usage(session_id,
+                        getattr(resp.usage, "prompt_tokens", 0),
+                        getattr(resp.usage, "completion_tokens", 0))
+                return resp.choices[0].message.content if resp.choices else None
+        except Exception:
+            return None
+
+    # ─────────────────────────────────────────────
+    # Session persistence
+    # ─────────────────────────────────────────────
+
+    def _sessions_dir(self) -> Path:
+        d = self.install_dir / "sessions"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def _session_file(self, session_id) -> Path:
+        safe = f"{session_id[0]}_{session_id[1]}"
+        return self._sessions_dir() / f"{safe}.json"
+
+    def save_session(self, session_id):
+        history = self.conversations.get(session_id)
+        if not history:
+            return
+        data = {
+            "session_id": list(session_id),
+            "model_idx": self.user_model.get(session_id, 0),
+            "history": history[-self.max_history:],
+            "usage": self._session_token_usage.get(session_id, {}),
+        }
+        try:
+            self._session_file(session_id).write_text(
+                json.dumps(data, ensure_ascii=False, indent=1, default=str),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+
+    def load_session(self, session_id) -> bool:
+        p = self._session_file(session_id)
+        if not p.exists():
+            return False
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            self.conversations[session_id] = data.get("history", [])
+            self.user_model[session_id] = data.get("model_idx", 0)
+            with self._usage_lock:
+                self._session_token_usage[session_id] = data.get("usage", {
+                    "prompt_tokens": 0, "completion_tokens": 0, "api_calls": 0,
+                })
+            return True
+        except Exception:
+            return False
+
+    def list_saved_sessions(self) -> list[str]:
+        d = self._sessions_dir()
+        return [f.stem for f in sorted(d.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True)]
 
     def reset_conversation(self, session_id: tuple):
         self.conversations.pop(session_id, None)
         self.reset_py_namespace(session_id)
+        try:
+            self._session_file(session_id).unlink(missing_ok=True)
+        except Exception:
+            pass
 
     # ─────────────────────────────────────────────
     # Model management
@@ -1361,9 +1526,61 @@ class AgentPool:
             )
         return f"{response}\n\n⚠️ 尚不可宣告完成：{hint}"
 
-    def _call_tool(self, name: str, inputs: dict, tools_dict: dict, turn_state: dict | None = None) -> Any:
+    # ── 權限分類 ────────────────────────────────────────────────
+    WRITE_TOOLS = {
+        "execute_shell", "execute_python", "write_file",
+        "create_tool", "install_package", "edit_soul",
+    }
+    READ_TOOLS = {
+        "read_file", "list_files", "http_request",
+        "recall_experience", "code1_rag_query",
+    }
+
+    def _check_permission(self, name: str, inputs: dict, session_id) -> str | None:
+        """回傳 None 表示通過；回傳 str 表示被擋的理由。"""
+        mode = self.permission_mode
+
+        # readonly：禁止一切寫入 / 執行
+        if mode == "readonly" and name in self.WRITE_TOOLS:
+            return f"⛔ 唯讀模式，已阻擋 `{name}`。請將 `permission_mode` 改為 `default` 或 `auto`。"
+
+        # denied_commands：Shell 黑名單
+        if name == "execute_shell" and self.denied_commands:
+            cmd = str(inputs.get("command", "")).lower().strip()
+            for dc in self.denied_commands:
+                if dc in cmd:
+                    return f"⛔ Shell 指令被安全規則阻擋：`{dc}` 命中黑名單 `denied_commands`。"
+
+        # denied_paths：路徑黑名單（讀寫都擋）
+        if name in ("read_file", "write_file") and self.denied_paths:
+            raw = str(inputs.get("path", ""))
+            try:
+                resolved = str(self.resolve_workspace_path(raw))
+            except Exception:
+                resolved = raw
+            for dp in self.denied_paths:
+                if resolved.startswith(dp):
+                    return f"⛔ 路徑被安全規則阻擋：`{raw}` 命中黑名單 `denied_paths`。"
+
+        # default 模式 + CLI：寫入工具需互動確認
+        if mode == "default" and name in self.WRITE_TOOLS and self._is_cli_session(session_id):
+            if self._cli_approval_callback:
+                approved = self._cli_approval_callback(name, inputs)
+                if not approved:
+                    return f"⛔ 使用者已拒絕 `{name}` 的執行。"
+
+        return None
+
+    def _call_tool(self, name: str, inputs: dict, tools_dict: dict,
+                   turn_state: dict | None = None, session_id=None) -> Any:
         if name not in tools_dict:
             return f"❌ 找不到工具: '{name}'"
+
+        # 權限檢查
+        block = self._check_permission(name, inputs, session_id)
+        if block:
+            return block
+
         if (
             self.enforce_gate_policy
             and turn_state
@@ -1406,6 +1623,25 @@ class AgentPool:
         except Exception:
             pass
 
+    def _record_usage(self, session_id, prompt_tokens: int, completion_tokens: int):
+        with self._usage_lock:
+            self._token_usage["prompt_tokens"] += prompt_tokens
+            self._token_usage["completion_tokens"] += completion_tokens
+            self._token_usage["api_calls"] += 1
+            if session_id is not None:
+                su = self._session_token_usage.setdefault(
+                    session_id, {"prompt_tokens": 0, "completion_tokens": 0, "api_calls": 0}
+                )
+                su["prompt_tokens"] += prompt_tokens
+                su["completion_tokens"] += completion_tokens
+                su["api_calls"] += 1
+
+    def get_token_usage(self, session_id=None) -> dict[str, int]:
+        with self._usage_lock:
+            if session_id and session_id in self._session_token_usage:
+                return {**self._session_token_usage[session_id]}
+            return {**self._token_usage}
+
     def _api_call_with_retry(self, call_fn, label: str = "API"):
         """Wrap an API call with retry + exponential backoff for transient errors."""
         import time
@@ -1438,8 +1674,16 @@ class AgentPool:
     ) -> str:
         system = self._system_prompt(session_id)
         schemas = self._get_schemas(tools_dict)
+        use_stream = self._is_cli_session(session_id) and self._stream_callback is not None
 
-        for _ in range(MAX_TOOL_CALLS):
+        for iteration in range(MAX_TOOL_CALLS):
+            is_likely_last = iteration > 0
+
+            if use_stream and is_likely_last:
+                return self._anthropic_stream_final(
+                    client, system, schemas, messages, tools_dict, session_id, turn_state,
+                )
+
             resp = self._api_call_with_retry(
                 lambda: client.client.messages.create(
                     model=client.model,
@@ -1450,6 +1694,11 @@ class AgentPool:
                 ),
                 label=f"Anthropic/{client.model}",
             )
+
+            if hasattr(resp, "usage") and resp.usage:
+                self._record_usage(session_id,
+                    getattr(resp.usage, "input_tokens", 0),
+                    getattr(resp.usage, "output_tokens", 0))
 
             if resp.stop_reason == "tool_use":
                 messages.append({"role": "assistant", "content": resp.content})
@@ -1463,7 +1712,7 @@ class AgentPool:
                                 session_id,
                                 f"🔧 {block.name}({json.dumps(block.input, ensure_ascii=False)[:160]})",
                             )
-                        result = self._call_tool(block.name, block.input, tools_dict, turn_state)
+                        result = self._call_tool(block.name, block.input, tools_dict, turn_state, session_id=session_id)
                         if self._use_compact_cli_trace(session_id) and cli_render:
                             cli_render.print_tool_result(block.name, result)
                         else:
@@ -1479,6 +1728,72 @@ class AgentPool:
                 return "\n".join(texts) or "（無回應）"
 
         return "❌ 超過工具呼叫次數上限"
+
+    def _anthropic_stream_final(
+        self, client, system, schemas, messages, tools_dict, session_id, turn_state,
+    ) -> str:
+        """Streaming Anthropic 回應；如果遇到 tool_use 就降級回非 stream 迴圈。"""
+        try:
+            with client.client.messages.stream(
+                model=client.model,
+                max_tokens=client.max_tokens,
+                system=system,
+                tools=schemas,
+                messages=messages,
+            ) as stream:
+                collected: list[str] = []
+                has_tool_use = False
+                for event in stream:
+                    if hasattr(event, "type"):
+                        if event.type == "content_block_start":
+                            if hasattr(event, "content_block") and getattr(event.content_block, "type", "") == "tool_use":
+                                has_tool_use = True
+                                break
+                        elif event.type == "content_block_delta":
+                            if hasattr(event, "delta") and hasattr(event.delta, "text"):
+                                chunk = event.delta.text
+                                collected.append(chunk)
+                                if self._stream_callback:
+                                    self._stream_callback(chunk)
+
+                if has_tool_use:
+                    resp = stream.get_final_message()
+                    if hasattr(resp, "usage") and resp.usage:
+                        self._record_usage(session_id,
+                            getattr(resp.usage, "input_tokens", 0),
+                            getattr(resp.usage, "output_tokens", 0))
+                    messages.append({"role": "assistant", "content": resp.content})
+                    results = []
+                    for block in resp.content:
+                        if block.type == "tool_use":
+                            if self._use_compact_cli_trace(session_id) and cli_render:
+                                cli_render.print_tool_start(block.name, block.input)
+                            else:
+                                self._emit_tool_trace(session_id,
+                                    f"🔧 {block.name}({json.dumps(block.input, ensure_ascii=False)[:160]})")
+                            result = self._call_tool(block.name, block.input, tools_dict, turn_state, session_id=session_id)
+                            if self._use_compact_cli_trace(session_id) and cli_render:
+                                cli_render.print_tool_result(block.name, result)
+                            else:
+                                self._emit_tool_trace(session_id, f"   → {str(result)[:180]}")
+                            results.append({
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": str(result),
+                            })
+                    messages.append({"role": "user", "content": results})
+                    return self._anthropic_loop(client, messages, tools_dict, session_id, turn_state)
+
+                final = stream.get_final_message()
+                if hasattr(final, "usage") and final.usage:
+                    self._record_usage(session_id,
+                        getattr(final.usage, "input_tokens", 0),
+                        getattr(final.usage, "output_tokens", 0))
+                if self._stream_callback:
+                    self._stream_callback(None)
+                return "".join(collected) or "（無回應）"
+        except Exception:
+            return self._anthropic_loop(client, messages, tools_dict, session_id, turn_state)
 
     def _openai_loop(
         self,
@@ -1514,6 +1829,11 @@ class AgentPool:
                 lambda: client.client.chat.completions.create(**kwargs),
                 label=f"OpenAI/{client.model}",
             )
+            if hasattr(resp, "usage") and resp.usage:
+                self._record_usage(session_id,
+                    getattr(resp.usage, "prompt_tokens", 0),
+                    getattr(resp.usage, "completion_tokens", 0))
+
             choice = resp.choices[0]
             msg = choice.message
 
@@ -1536,7 +1856,7 @@ class AgentPool:
                                 session_id,
                                 f"🔧 {tc.function.name}({str(args)[:160]})",
                             )
-                        result = self._call_tool(tc.function.name, args, tools_dict, turn_state)
+                        result = self._call_tool(tc.function.name, args, tools_dict, turn_state, session_id=session_id)
                         if self._use_compact_cli_trace(session_id) and cli_render:
                             cli_render.print_tool_result(tc.function.name, result)
                         else:
@@ -1547,9 +1867,43 @@ class AgentPool:
                         "content": str(result),
                     })
             else:
+                # Streaming 最終文字回應
+                if (self._is_cli_session(session_id)
+                        and self._stream_callback is not None
+                        and not msg.tool_calls):
+                    return self._openai_stream_final(
+                        client, messages, oai_tools, session_id)
                 return msg.content or "（無回應）"
 
         return "❌ 超過工具呼叫次數上限"
+
+    def _openai_stream_final(self, client, messages, oai_tools, session_id) -> str:
+        """OpenAI streaming 最終回應。"""
+        try:
+            kwargs: dict = {
+                "model": client.model,
+                "messages": messages,
+                "max_tokens": client.max_tokens,
+                "stream": True,
+            }
+            if oai_tools:
+                kwargs["tools"] = oai_tools
+
+            stream = client.client.chat.completions.create(**kwargs)
+            collected: list[str] = []
+            for chunk in stream:
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+                if delta and delta.content:
+                    collected.append(delta.content)
+                    if self._stream_callback:
+                        self._stream_callback(delta.content)
+            if self._stream_callback:
+                self._stream_callback(None)
+            return "".join(collected) or "（無回應）"
+        except Exception:
+            return "（streaming 回退失敗）"
 
     # ─────────────────────────────────────────────
     # System prompt
@@ -1565,6 +1919,55 @@ class AgentPool:
             return content
         except Exception:
             return ""
+
+    def _load_skills_section(self, session_id) -> str:
+        """載入 skills/*.md，根據最近用戶訊息做關鍵字比對，注入相關 skill。"""
+        skills_dir = self.install_dir / "skills"
+        if not skills_dir.is_dir():
+            skills_dir = self.workspace_dir / "skills"
+        if not skills_dir.is_dir():
+            return ""
+
+        md_files = sorted(skills_dir.glob("*.md"))
+        if not md_files:
+            return ""
+
+        history = self.conversations.get(session_id, [])
+        user_msgs = [m["content"] for m in history if m.get("role") == "user"]
+        query = (user_msgs[-1] if user_msgs else "").lower()
+
+        loaded: list[str] = []
+        for f in md_files:
+            try:
+                text = f.read_text(encoding="utf-8").strip()
+                if not text:
+                    continue
+                first_line = text.split("\n", 1)[0].lower()
+                keywords_line = ""
+                for line in text.split("\n")[:5]:
+                    if line.lower().startswith("keywords:"):
+                        keywords_line = line.split(":", 1)[1].lower()
+                        break
+
+                relevant = False
+                if not query:
+                    relevant = True
+                elif any(kw.strip() in query for kw in keywords_line.split(",") if kw.strip()):
+                    relevant = True
+                elif f.stem.lower().replace("_", " ").replace("-", " ") in query:
+                    relevant = True
+
+                if relevant:
+                    if len(text) > 1500:
+                        text = text[:1500] + "\n…（已截斷）"
+                    loaded.append(f"### {f.stem}\n{text}")
+            except Exception:
+                continue
+
+        if not loaded:
+            return ""
+        combined = "\n\n".join(loaded[:5])
+        return f"\n\n## Skills 知識庫\n{combined}"
 
     def _system_prompt(self, session_id) -> str:
         tool_list = (
@@ -1603,6 +2006,8 @@ class AgentPool:
 
         soul = self._load_soul()
         soul_section = f"\n## 人設與個性風格（SOUL.md）\n{soul}\n" if soul else ""
+
+        skills_section = self._load_skills_section(session_id)
 
         # 注入相關過往經驗（TF-IDF 語意檢索）
         # session_id 為 None 時（子代理模式）略過以減少 prompt 長度
@@ -1679,7 +2084,7 @@ class AgentPool:
 - 積極主動使用工具，不只給建議
 - 並行任務優先考慮 `run_pipeline` 或 `spawn_agent`
 - 高風險操作前先確認
-- 保持簡潔友善"""
+- 保持簡潔友善{skills_section}"""
 
     # ─────────────────────────────────────────────
     # Tool management

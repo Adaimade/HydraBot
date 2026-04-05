@@ -131,6 +131,17 @@ def _wants_cli(argv: list[str]) -> bool:
     return "--cli" in rest or "-c" in rest or (len(rest) >= 1 and rest[0] == "cli")
 
 
+def _extract_prompt(argv: list[str]) -> str | None:
+    """取 --prompt / -p 後的參數；回傳 None 代表不是非互動模式。"""
+    rest = argv[1:]
+    for i, a in enumerate(rest):
+        if a in ("--prompt", "-p") and i + 1 < len(rest):
+            return rest[i + 1]
+        if a.startswith("--prompt="):
+            return a.split("=", 1)[1]
+    return None
+
+
 def main():
     install_dir = Path(__file__).resolve().parent
 
@@ -142,6 +153,7 @@ def main():
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
     cli_mode = _wants_cli(sys.argv)
+    prompt_once = _extract_prompt(sys.argv)
 
     env_ws = (os.environ.get("HYDRABOT_WORKSPACE") or "").strip()
     if ws_arg is not None:
@@ -157,7 +169,7 @@ def main():
         sys.exit(1)
 
     config_path = install_dir / "config.json"
-    config = load_config(config_path, allow_without_messengers=cli_mode)
+    config = load_config(config_path, allow_without_messengers=(cli_mode or prompt_once is not None))
     config["_hydrabot_install_dir"] = str(install_dir)
     config["_hydrabot_workspace_dir"] = str(workspace_dir)
 
@@ -165,6 +177,11 @@ def main():
     if workspace_dir != install_dir.resolve():
         print(f"📂 工作區（檔案／shell／Python 相對路徑）: {workspace_dir}")
         print(f"📦 HydraBot 安裝與 config: {install_dir}\n")
+
+    if prompt_once is not None:
+        from cli import run_prompt
+        run_prompt(config, prompt_once)
+        return
 
     if cli_mode:
         from cli import run_cli

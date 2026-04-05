@@ -235,6 +235,16 @@ def print_banner(workspace_hint: str = "") -> None:
     )
 
 
+def print_assistant_header() -> None:
+    """Streaming 模式下在開始輸出前印一行分隔。"""
+    print(_c(ANSI_DIM, "  ─ assistant ─────────────────────────────────"), flush=True)
+    print("  ", end="", flush=True)
+
+
+def print_assistant_footer() -> None:
+    print(_c(ANSI_DIM, "  ─────────────────────────────────────────────"), flush=True)
+
+
 def print_assistant_block(text: str) -> None:
     """最終助手回覆：與工具區塊視覺分離；長行依終端寬度換行。"""
     if not text.strip():

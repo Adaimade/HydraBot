@@ -147,6 +147,19 @@ cli)
     exec "$PYTHON" "$SCRIPT_DIR/main.py" --cli
     ;;
 
+# ── run — 單次非互動執行 ──────────────────────────────────────
+run)
+    shift
+    if [[ -z "$1" ]]; then
+        printf "${R}❌ 請提供 prompt，例如: hydrabot run \"列出此專案結構\"${NC}\n"
+        exit 1
+    fi
+    PYTHON=$(find_python)
+    [[ -z "$PYTHON" ]] && { printf "${R}❌ 找不到 Python！${NC}\n"; exit 1; }
+    cd "$INVOCATION_PWD" 2>/dev/null || cd "$SCRIPT_DIR"
+    exec "$PYTHON" "$SCRIPT_DIR/main.py" --prompt "$*"
+    ;;
+
 # ── update ────────────────────────────────────────────────────
 update)
     bash "$SCRIPT_DIR/scripts/update.sh" "${2:-}"
@@ -240,6 +253,7 @@ help|--help|-h|*)
     printf "  ${C}hydrabot${NC}                無子命令：有有效 TG/DC token 則等同 start，否則等同 cli\n"
     printf "  ${C}hydrabot start${NC}          启动 Bot（在當前目錄作為專案工作區；可加 --workspace 路徑）\n"
     printf "  ${C}hydrabot cli${NC}            終端機互動（可不設 TG/DC；當前目錄為工作區）\n"
+    printf "  ${C}hydrabot run \"…\"${NC}        單次非互動執行（跑完印結果就退出）\n"
     printf "  ${C}hydrabot update${NC}         更新到最新版本\n"
     printf "  ${C}hydrabot update --force${NC} 强制更新（即使版本相同）\n"
     printf "  ${C}hydrabot config${NC}         编辑 config.json\n"

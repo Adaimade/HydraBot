@@ -31,6 +31,11 @@
   "_註解_cli_ui": "僅 python main.py --cli：精簡工具列印（● Bash、階層線、長輸出摺疊）。設 false 還原舊版 🔧 日誌",
   "cli_compact_ui": true,
 
+  "_註解_permission": "安全權限 — default: 寫入前需確認（僅 CLI 互動）; auto: 全開不問; readonly: 禁止寫入與執行",
+  "permission_mode": "auto",
+  "denied_commands": ["rm -rf /", "rm -rf /*", "mkfs", ":(){:|:&};:", "dd if=/dev/zero"],
+  "denied_paths": ["~/.ssh", "~/.gnupg", "~/.aws", "/etc/shadow", "/etc/passwd"],
+
   "_註解_model_roles": "三層模型角色對應（填 models 陣列的索引）：primary=主力、fast=快速、daily=日常",
   "model_roles": {
     "primary": 0,
