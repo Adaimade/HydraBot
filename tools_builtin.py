@@ -9,6 +9,7 @@ import io
 import os
 import sys
 import json
+import shutil
 import subprocess
 import traceback
 import threading
@@ -142,6 +143,138 @@ def get_builtin_tools(agent: "Agent") -> list:
             if not items:
                 lines.append("  （空）")
             return "\n".join(lines)
+        except Exception as e:
+            return f"❌ {e}"
+
+    # ─────────────────────────────────────────────────────────────
+    # grep_search — 程式碼搜尋（ripgrep / grep）
+    # ─────────────────────────────────────────────────────────────
+
+    def grep_search(
+        pattern: str,
+        path: str = ".",
+        include: str = "",
+        ignore_case: bool = False,
+        max_results: int = 50,
+    ) -> str:
+        """Search file contents using regex pattern (like ripgrep). Returns matching lines with file paths and line numbers."""
+        try:
+            base = agent.resolve_workspace_path(path)
+            if not base.exists():
+                return f"❌ 路徑不存在: {path}"
+
+            rg = shutil.which("rg")
+            if rg:
+                cmd = [rg, "--line-number", "--no-heading", "--color=never",
+                       "--max-count=5", f"--max-filesize=1M"]
+                if ignore_case:
+                    cmd.append("-i")
+                if include:
+                    cmd.extend(["--glob", include])
+                cmd.extend([
+                    "--glob", "!.git",
+                    "--glob", "!node_modules",
+                    "--glob", "!__pycache__",
+                    "--glob", "!*.pyc",
+                    "--glob", "!venv",
+                ])
+                cmd.append(pattern)
+                cmd.append(str(base))
+            else:
+                cmd = ["grep", "-rn", "--color=never"]
+                if ignore_case:
+                    cmd.append("-i")
+                if include:
+                    cmd.extend(["--include", include])
+                cmd.extend([
+                    "--exclude-dir=.git",
+                    "--exclude-dir=node_modules",
+                    "--exclude-dir=__pycache__",
+                    "--exclude-dir=venv",
+                ])
+                cmd.append(pattern)
+                cmd.append(str(base))
+
+            r = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=15, cwd=str(base),
+            )
+            lines = r.stdout.strip().splitlines()
+            if not lines:
+                return f"🔍 未找到符合 `{pattern}` 的結果"
+
+            total = len(lines)
+            shown = lines[:max_results]
+            try:
+                display = []
+                for line in shown:
+                    display.append(line.replace(str(base) + "/", ""))
+                result = "\n".join(display)
+            except Exception:
+                result = "\n".join(shown)
+
+            header = f"🔍 找到 {total} 筆結果"
+            if total > max_results:
+                header += f"（顯示前 {max_results} 筆）"
+            return f"{header}\n```\n{result}\n```"
+        except subprocess.TimeoutExpired:
+            return "❌ 搜尋超時（15s）"
+        except Exception as e:
+            return f"❌ {e}"
+
+    # ─────────────────────────────────────────────────────────────
+    # find_files — 檔名搜尋
+    # ─────────────────────────────────────────────────────────────
+
+    def find_files(
+        name: str,
+        path: str = ".",
+        file_type: str = "all",
+        max_results: int = 40,
+    ) -> str:
+        """Find files/directories by name pattern (glob). file_type: 'file', 'dir', or 'all'."""
+        try:
+            base = agent.resolve_workspace_path(path)
+            if not base.exists():
+                return f"❌ 路徑不存在: {path}"
+
+            skip = {".git", "node_modules", "__pycache__", "venv", ".venv", ".tox"}
+            matches = []
+
+            def _walk(d: Path, depth: int = 0):
+                if depth > 8 or len(matches) >= max_results:
+                    return
+                try:
+                    entries = sorted(d.iterdir())
+                except PermissionError:
+                    return
+                for item in entries:
+                    if item.name in skip:
+                        continue
+                    if len(matches) >= max_results:
+                        return
+                    import fnmatch
+                    if fnmatch.fnmatch(item.name, name):
+                        if file_type == "file" and not item.is_file():
+                            pass
+                        elif file_type == "dir" and not item.is_dir():
+                            pass
+                        else:
+                            try:
+                                rel = item.relative_to(base)
+                            except ValueError:
+                                rel = item
+                            tag = "📁" if item.is_dir() else "📄"
+                            sz = f"  ({item.stat().st_size:,}B)" if item.is_file() else "/"
+                            matches.append(f"  {tag} {rel}{sz}")
+                    if item.is_dir():
+                        _walk(item, depth + 1)
+
+            _walk(base)
+
+            if not matches:
+                return f"🔍 未找到符合 `{name}` 的檔案"
+            header = f"🔍 找到 {len(matches)} 個結果"
+            return header + "\n" + "\n".join(matches)
         except Exception as e:
             return f"❌ {e}"
 
@@ -697,6 +830,44 @@ def get_builtin_tools(agent: "Agent") -> list:
                 },
             },
         }, list_files),
+
+        ("grep_search", {
+            "name": "grep_search",
+            "description": (
+                "在專案中搜尋檔案內容（正則表達式）。使用 ripgrep 或 grep，返回匹配行與檔案位置。"
+                "適合搜尋函式定義、變數引用、錯誤訊息等。"
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "pattern":     {"type": "string",  "description": "搜尋的正則表達式"},
+                    "path":        {"type": "string",  "description": "搜尋起始路徑（預設目前目錄）"},
+                    "include":     {"type": "string",  "description": "限定檔案 glob，如 '*.py' 或 '*.ts'"},
+                    "ignore_case": {"type": "boolean", "description": "是否忽略大小寫（預設 false）"},
+                    "max_results": {"type": "integer", "description": "最多顯示幾筆（預設 50）"},
+                },
+                "required": ["pattern"],
+            },
+        }, grep_search),
+
+        ("find_files", {
+            "name": "find_files",
+            "description": (
+                "依檔名模式搜尋檔案或目錄（glob 比對）。"
+                "適合找特定檔案，如 '*.py'、'Dockerfile'、'test_*.js'。"
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "name":        {"type": "string",  "description": "檔名 glob 模式，如 '*.py' 或 'config.*'"},
+                    "path":        {"type": "string",  "description": "搜尋起始路徑（預設目前目錄）"},
+                    "file_type":   {"type": "string",  "description": "'file'、'dir' 或 'all'（預設 all）",
+                                    "enum": ["file", "dir", "all"]},
+                    "max_results": {"type": "integer", "description": "最多顯示數量（預設 40）"},
+                },
+                "required": ["name"],
+            },
+        }, find_files),
 
         ("install_package", {
             "name": "install_package",

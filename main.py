@@ -154,6 +154,7 @@ def main():
 
     cli_mode = _wants_cli(sys.argv)
     prompt_once = _extract_prompt(sys.argv)
+    dry_run = "--dry-run" in sys.argv
 
     env_ws = (os.environ.get("HYDRABOT_WORKSPACE") or "").strip()
     if ws_arg is not None:
@@ -172,6 +173,8 @@ def main():
     config = load_config(config_path, allow_without_messengers=(cli_mode or prompt_once is not None))
     config["_hydrabot_install_dir"] = str(install_dir)
     config["_hydrabot_workspace_dir"] = str(workspace_dir)
+    if dry_run:
+        config["dry_run"] = True
 
     os.chdir(workspace_dir)
     if workspace_dir != install_dir.resolve():

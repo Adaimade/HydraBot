@@ -180,6 +180,7 @@ class AgentPool:
         ]
         self._cli_approval_callback = None  # set by cli.py for interactive y/n
         self._stream_callback = None  # set by cli.py: callback(chunk_str | None=flush)
+        self.dry_run: bool = bool(config.get("dry_run", False))
 
         # Token 追蹤
         self._token_usage: dict[str, int] = {
@@ -1534,6 +1535,10 @@ class AgentPool:
     READ_TOOLS = {
         "read_file", "list_files", "http_request",
         "recall_experience", "code1_rag_query",
+        "grep_search", "find_files",
+    }
+    PARALLEL_SAFE_TOOLS = READ_TOOLS | {
+        "remember", "log_experience",
     }
 
     def _check_permission(self, name: str, inputs: dict, session_id) -> str | None:
@@ -1581,6 +1586,13 @@ class AgentPool:
         if block:
             return block
 
+        # dry-run：列印但不執行
+        if self.dry_run:
+            summary = json.dumps(inputs, ensure_ascii=False, default=str)
+            if len(summary) > 300:
+                summary = summary[:297] + "…"
+            return f"🔍 [dry-run] 將呼叫 `{name}`，參數：{summary}（未實際執行）"
+
         if (
             self.enforce_gate_policy
             and turn_state
@@ -1603,6 +1615,12 @@ class AgentPool:
             if turn_state is not None and name in self.GATE_TOOL_NAMES:
                 turn_state["gate_attempted"] = True
             return f"❌ 工具 '{name}' 錯誤:\n```\n{traceback.format_exc()}\n```"
+
+    def _can_parallelize(self, tool_names: list[str]) -> bool:
+        """多個工具呼叫時，若全為 PARALLEL_SAFE 則可並行。"""
+        if len(tool_names) < 2:
+            return False
+        return all(n in self.PARALLEL_SAFE_TOOLS for n in tool_names)
 
     def _emit_tool_trace(self, session_id, text: str) -> None:
         """Emit tool trace to stdout and optionally to chat."""
@@ -1702,16 +1720,44 @@ class AgentPool:
 
             if resp.stop_reason == "tool_use":
                 messages.append({"role": "assistant", "content": resp.content})
-                results = []
-                for block in resp.content:
-                    if block.type == "tool_use":
+                tool_blocks = [b for b in resp.content if b.type == "tool_use"]
+
+                # 先列印所有工具呼叫
+                for block in tool_blocks:
+                    if self._use_compact_cli_trace(session_id) and cli_render:
+                        cli_render.print_tool_start(block.name, block.input)
+                    else:
+                        self._emit_tool_trace(
+                            session_id,
+                            f"🔧 {block.name}({json.dumps(block.input, ensure_ascii=False)[:160]})",
+                        )
+
+                tool_names = [b.name for b in tool_blocks]
+                if self._can_parallelize(tool_names):
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(tool_blocks), 4)) as pool:
+                        futures = {
+                            pool.submit(self._call_tool, b.name, b.input, tools_dict, turn_state, session_id): b
+                            for b in tool_blocks
+                        }
+                        block_results = {}
+                        for fut in concurrent.futures.as_completed(futures):
+                            b = futures[fut]
+                            block_results[b.id] = fut.result()
+                    results = []
+                    for block in tool_blocks:
+                        result = block_results[block.id]
                         if self._use_compact_cli_trace(session_id) and cli_render:
-                            cli_render.print_tool_start(block.name, block.input)
+                            cli_render.print_tool_result(block.name, result)
                         else:
-                            self._emit_tool_trace(
-                                session_id,
-                                f"🔧 {block.name}({json.dumps(block.input, ensure_ascii=False)[:160]})",
-                            )
+                            self._emit_tool_trace(session_id, f"   → {str(result)[:180]}")
+                        results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": str(result),
+                        })
+                else:
+                    results = []
+                    for block in tool_blocks:
                         result = self._call_tool(block.name, block.input, tools_dict, turn_state, session_id=session_id)
                         if self._use_compact_cli_trace(session_id) and cli_render:
                             cli_render.print_tool_result(block.name, result)
@@ -1841,31 +1887,69 @@ class AgentPool:
             # 若只檢查 finish_reason=="tool_calls" 會永遠不執行工具（排程、Shell 等全部失效）。
             if msg.tool_calls:
                 messages.append(msg)
+
+                parsed_calls: list[tuple] = []
                 for tc in msg.tool_calls:
                     raw_args = tc.function.arguments or "{}"
                     try:
                         args = json.loads(raw_args)
                     except json.JSONDecodeError:
-                        result = f"❌ 無法解析工具參數（JSON）: {raw_args[:300]}"
-                        args = {}
+                        args = None
+                        err = f"❌ 無法解析工具參數（JSON）: {raw_args[:300]}"
                     else:
+                        err = None
+                    parsed_calls.append((tc, args, err))
+
+                # 列印所有工具呼叫
+                for tc, args, err in parsed_calls:
+                    if args is not None:
                         if self._use_compact_cli_trace(session_id) and cli_render:
                             cli_render.print_tool_start(tc.function.name, args)
                         else:
-                            self._emit_tool_trace(
-                                session_id,
-                                f"🔧 {tc.function.name}({str(args)[:160]})",
-                            )
-                        result = self._call_tool(tc.function.name, args, tools_dict, turn_state, session_id=session_id)
-                        if self._use_compact_cli_trace(session_id) and cli_render:
-                            cli_render.print_tool_result(tc.function.name, result)
+                            self._emit_tool_trace(session_id,
+                                f"🔧 {tc.function.name}({str(args)[:160]})")
+
+                tool_names = [tc.function.name for tc, args, _ in parsed_calls if args is not None]
+                can_par = self._can_parallelize(tool_names)
+
+                if can_par:
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(parsed_calls), 4)) as pool:
+                        futures = {}
+                        for tc, args, err in parsed_calls:
+                            if args is not None:
+                                fut = pool.submit(self._call_tool, tc.function.name, args, tools_dict, turn_state, session_id)
+                                futures[tc.id] = fut
+                        call_results = {tid: fut.result() for tid, fut in futures.items()}
+
+                    for tc, args, err in parsed_calls:
+                        if err:
+                            result = err
                         else:
-                            self._emit_tool_trace(session_id, f"   → {str(result)[:180]}")
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": str(result),
-                    })
+                            result = call_results[tc.id]
+                            if self._use_compact_cli_trace(session_id) and cli_render:
+                                cli_render.print_tool_result(tc.function.name, result)
+                            else:
+                                self._emit_tool_trace(session_id, f"   → {str(result)[:180]}")
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": str(result),
+                        })
+                else:
+                    for tc, args, err in parsed_calls:
+                        if err:
+                            result = err
+                        else:
+                            result = self._call_tool(tc.function.name, args, tools_dict, turn_state, session_id=session_id)
+                            if self._use_compact_cli_trace(session_id) and cli_render:
+                                cli_render.print_tool_result(tc.function.name, result)
+                            else:
+                                self._emit_tool_trace(session_id, f"   → {str(result)[:180]}")
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": str(result),
+                        })
             else:
                 # Streaming 最終文字回應
                 if (self._is_cli_session(session_id)

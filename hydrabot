@@ -144,20 +144,32 @@ cli)
     fi
     printf "  ${C}HydraBot CLI 模式${NC}（工作目錄: ${INVOCATION_PWD}）\n\n"
     cd "$INVOCATION_PWD" 2>/dev/null || cd "$SCRIPT_DIR"
-    exec "$PYTHON" "$SCRIPT_DIR/main.py" --cli
+    EXTRA_FLAGS=""
+    [[ "${2:-}" == "--dry-run" ]] && EXTRA_FLAGS="--dry-run"
+    exec "$PYTHON" "$SCRIPT_DIR/main.py" --cli $EXTRA_FLAGS
     ;;
 
 # ── run — 單次非互動執行 ──────────────────────────────────────
 run)
     shift
-    if [[ -z "$1" ]]; then
+    DRY=""
+    PROMPT_ARGS=""
+    for a in "$@"; do
+        if [[ "$a" == "--dry-run" ]]; then
+            DRY="--dry-run"
+        else
+            PROMPT_ARGS="$PROMPT_ARGS $a"
+        fi
+    done
+    PROMPT_ARGS="${PROMPT_ARGS# }"
+    if [[ -z "$PROMPT_ARGS" ]]; then
         printf "${R}❌ 請提供 prompt，例如: hydrabot run \"列出此專案結構\"${NC}\n"
         exit 1
     fi
     PYTHON=$(find_python)
     [[ -z "$PYTHON" ]] && { printf "${R}❌ 找不到 Python！${NC}\n"; exit 1; }
     cd "$INVOCATION_PWD" 2>/dev/null || cd "$SCRIPT_DIR"
-    exec "$PYTHON" "$SCRIPT_DIR/main.py" --prompt "$*"
+    exec "$PYTHON" "$SCRIPT_DIR/main.py" --prompt "$PROMPT_ARGS" $DRY
     ;;
 
 # ── update ────────────────────────────────────────────────────
