@@ -21,6 +21,7 @@ HydraBot — Notification Scheduler
 """
 
 import json
+import os
 import uuid
 import threading
 import asyncio
@@ -277,12 +278,23 @@ class NotificationScheduler:
 
     def _save_jobs(self):
         try:
+            import tempfile as _tf
             with self._lock:
                 data = [j.to_dict() for j in self._jobs.values()]
-            self._schedules_file.write_text(
-                json.dumps(data, indent=2, ensure_ascii=False),
-                encoding="utf-8",
+            text = json.dumps(data, indent=2, ensure_ascii=False)
+            fd, tmp = _tf.mkstemp(
+                dir=str(self._schedules_file.parent), suffix=".tmp"
             )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(text)
+                Path(tmp).replace(self._schedules_file)
+            except Exception:
+                try:
+                    Path(tmp).unlink(missing_ok=True)
+                except Exception:
+                    pass
+                raise
         except Exception as e:
             logger.warning(f"Failed to save schedules: {e}")
 

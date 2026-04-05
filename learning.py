@@ -198,12 +198,24 @@ class ExperienceLog:
 
     def _save(self):
         try:
+            import tempfile as _tf
+            import os as _os
             with self._lock:
                 data = [e.to_dict() for e in self._entries]
-            self._path.write_text(
-                json.dumps(data, indent=2, ensure_ascii=False),
-                encoding="utf-8",
+            text = json.dumps(data, indent=2, ensure_ascii=False)
+            fd, tmp = _tf.mkstemp(
+                dir=str(self._path.parent), suffix=".tmp"
             )
+            try:
+                with _os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(text)
+                Path(tmp).replace(self._path)
+            except Exception:
+                try:
+                    Path(tmp).unlink(missing_ok=True)
+                except Exception:
+                    pass
+                raise
         except Exception as exc:
             print(f"⚠️  ExperienceLog 儲存失敗: {exc}")
 

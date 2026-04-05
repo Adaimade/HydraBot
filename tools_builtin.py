@@ -574,7 +574,19 @@ def get_builtin_tools(agent: "Agent") -> list:
             memory = {}
 
         def save():
-            mem_file.write_text(json.dumps(memory, indent=2, ensure_ascii=False))
+            import tempfile
+            text = json.dumps(memory, indent=2, ensure_ascii=False)
+            fd, tmp = tempfile.mkstemp(dir=str(mem_file.parent), suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(text)
+                Path(tmp).replace(mem_file)
+            except Exception:
+                try:
+                    Path(tmp).unlink(missing_ok=True)
+                except Exception:
+                    pass
+                raise
 
         if action == "set":
             if value is None:

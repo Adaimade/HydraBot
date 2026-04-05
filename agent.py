@@ -10,17 +10,39 @@ from __future__ import annotations
 import json
 import asyncio
 import importlib.util
+import os
 import traceback
 import threading
 import concurrent.futures
 import uuid
 import re
+import tempfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
-
 from scheduler import NotificationScheduler, parse_fire_at, REPEAT_INTERVALS
 from learning import ExperienceLog, is_likely_failure
+
+
+def _atomic_write_json(path: Path, data, **kwargs):
+    """原子寫入 JSON：先寫臨時檔再 rename，避免半截寫入。"""
+    try:
+        text = json.dumps(data, ensure_ascii=False, indent=1, default=str, **kwargs)
+        fd, tmp = tempfile.mkstemp(
+            dir=str(path.parent), suffix=".tmp", prefix=f".{path.stem}_"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(text)
+            Path(tmp).replace(path)
+        except Exception:
+            try:
+                Path(tmp).unlink(missing_ok=True)
+            except Exception:
+                pass
+            raise
+    except Exception:
+        pass
 
 try:
     import cli_render  # CLI 精簡輸出（可選；缺失時不影響 TG/DC）
@@ -211,6 +233,7 @@ class AgentPool:
 
         # Lazy-init model clients  { index -> _ModelClient }
         self._clients: dict[int, _ModelClient] = {}
+        self._clients_lock = threading.Lock()
 
         # Shared tool registry  { name -> (schema, callable) }
         self.tools: dict[str, tuple] = {}
@@ -220,6 +243,7 @@ class AgentPool:
         # thread_id is the Telegram Topic ID (None for non-topic chats).
         # This lets each group / topic maintain a fully independent context.
         self.conversations: dict[tuple, list] = {}
+        self._conv_lock = threading.Lock()
 
         # Each session's preferred primary model index (default: 0)
         self.user_model: dict[tuple, int] = {}
@@ -487,11 +511,12 @@ class AgentPool:
 
     def get_client(self, model_idx: int) -> _ModelClient:
         idx = model_idx % len(self.model_configs)
-        if idx not in self._clients:
-            self._clients[idx] = _ModelClient(
-                self.model_configs[idx], self.max_tokens
-            )
-        return self._clients[idx]
+        with self._clients_lock:
+            if idx not in self._clients:
+                self._clients[idx] = _ModelClient(
+                    self.model_configs[idx], self.max_tokens
+                )
+            return self._clients[idx]
 
     # ─────────────────────────────────────────────
     # Public chat API
@@ -507,11 +532,13 @@ class AgentPool:
         """
         model_idx = self.user_model.get(session_id, 0)
 
-        if session_id not in self.conversations:
-            self.conversations[session_id] = []
+        with self._conv_lock:
+            if session_id not in self.conversations:
+                self.conversations[session_id] = []
+            history = self.conversations[session_id]
+            history.append({"role": "user", "content": message})
+            history_snapshot = list(history)
 
-        history = self.conversations[session_id]
-        history.append({"role": "user", "content": message})
         turn_state = self._build_turn_state(message)
 
         # Build session tools (includes session-bound spawn_agent)
@@ -526,7 +553,7 @@ class AgentPool:
             if client.provider == "anthropic":
                 response = self._anthropic_loop(
                     client,
-                    list(history),
+                    history_snapshot,
                     session_tools,
                     session_id,
                     turn_state,
@@ -534,7 +561,7 @@ class AgentPool:
             else:
                 response = self._openai_loop(
                     client,
-                    list(history),
+                    history_snapshot,
                     session_tools,
                     session_id,
                     turn_state,
@@ -572,10 +599,11 @@ class AgentPool:
 
         response = self._enforce_completion_rule(response, turn_state)
 
-        history.append({"role": "assistant", "content": response})
-
-        if len(history) > self.max_history:
-            self.conversations[session_id] = history[-self.max_history:]
+        with self._conv_lock:
+            history = self.conversations.get(session_id, [])
+            history.append({"role": "assistant", "content": response})
+            if len(history) > self.max_history:
+                self.conversations[session_id] = history[-self.max_history:]
 
         self._maybe_compact_context(session_id)
 
@@ -598,17 +626,18 @@ class AgentPool:
 
     def _maybe_compact_context(self, session_id):
         """當 history 達到 max_history 的 80% 時，將前半段壓縮成摘要。"""
-        history = self.conversations.get(session_id)
-        if not history:
-            return
-        threshold = int(self.max_history * 0.8)
-        if len(history) < threshold:
-            return
-
-        keep_recent = max(6, self.max_history // 4)
-        old_part = history[:-keep_recent]
-        if len(old_part) < 4:
-            return
+        with self._conv_lock:
+            history = self.conversations.get(session_id)
+            if not history:
+                return
+            threshold = int(self.max_history * 0.8)
+            if len(history) < threshold:
+                return
+            keep_recent = max(6, self.max_history // 4)
+            old_part = list(history[:-keep_recent])
+            if len(old_part) < 4:
+                return
+            recent_part = list(history[-keep_recent:])
 
         summary_text = self._summarize_messages(old_part, session_id)
         if not summary_text:
@@ -621,7 +650,8 @@ class AgentPool:
                 f"{summary_text}"
             ),
         }
-        self.conversations[session_id] = [compact_msg] + history[-keep_recent:]
+        with self._conv_lock:
+            self.conversations[session_id] = [compact_msg] + recent_part
 
     def _summarize_messages(self, messages: list[dict], session_id) -> str | None:
         """用快速模型將多條訊息壓縮為摘要。"""
@@ -689,22 +719,17 @@ class AgentPool:
         return self._sessions_dir() / f"{safe}.json"
 
     def save_session(self, session_id):
-        history = self.conversations.get(session_id)
-        if not history:
-            return
-        data = {
-            "session_id": list(session_id),
-            "model_idx": self.user_model.get(session_id, 0),
-            "history": history[-self.max_history:],
-            "usage": self._session_token_usage.get(session_id, {}),
-        }
-        try:
-            self._session_file(session_id).write_text(
-                json.dumps(data, ensure_ascii=False, indent=1, default=str),
-                encoding="utf-8",
-            )
-        except Exception:
-            pass
+        with self._conv_lock:
+            history = self.conversations.get(session_id)
+            if not history:
+                return
+            data = {
+                "session_id": list(session_id),
+                "model_idx": self.user_model.get(session_id, 0),
+                "history": list(history[-self.max_history:]),
+                "usage": self._session_token_usage.get(session_id, {}),
+            }
+        _atomic_write_json(self._session_file(session_id), data)
 
     def load_session(self, session_id) -> bool:
         p = self._session_file(session_id)
@@ -712,8 +737,9 @@ class AgentPool:
             return False
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
-            self.conversations[session_id] = data.get("history", [])
-            self.user_model[session_id] = data.get("model_idx", 0)
+            with self._conv_lock:
+                self.conversations[session_id] = data.get("history", [])
+                self.user_model[session_id] = data.get("model_idx", 0)
             with self._usage_lock:
                 self._session_token_usage[session_id] = data.get("usage", {
                     "prompt_tokens": 0, "completion_tokens": 0, "api_calls": 0,
@@ -727,7 +753,8 @@ class AgentPool:
         return [f.stem for f in sorted(d.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True)]
 
     def reset_conversation(self, session_id: tuple):
-        self.conversations.pop(session_id, None)
+        with self._conv_lock:
+            self.conversations.pop(session_id, None)
         self.reset_py_namespace(session_id)
         try:
             self._session_file(session_id).unlink(missing_ok=True)
@@ -1537,9 +1564,7 @@ class AgentPool:
         "recall_experience", "code1_rag_query",
         "grep_search", "find_files",
     }
-    PARALLEL_SAFE_TOOLS = READ_TOOLS | {
-        "remember", "log_experience",
-    }
+    PARALLEL_SAFE_TOOLS = READ_TOOLS
 
     def _check_permission(self, name: str, inputs: dict, session_id) -> str | None:
         """回傳 None 表示通過；回傳 str 表示被擋的理由。"""
@@ -1775,10 +1800,16 @@ class AgentPool:
 
         return "❌ 超過工具呼叫次數上限"
 
+    _STREAM_MAX_FALLBACK = 3
+
     def _anthropic_stream_final(
         self, client, system, schemas, messages, tools_dict, session_id, turn_state,
+        _depth: int = 0,
     ) -> str:
         """Streaming Anthropic 回應；如果遇到 tool_use 就降級回非 stream 迴圈。"""
+        if _depth >= self._STREAM_MAX_FALLBACK:
+            return self._anthropic_loop(client, messages, tools_dict, session_id, turn_state)
+
         try:
             with client.client.messages.stream(
                 model=client.model,
