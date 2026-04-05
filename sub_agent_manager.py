@@ -172,7 +172,7 @@ class SubAgentManager:
             return f"找不到 main.py: {main_py}"
 
         try:
-            log_fh = open(agent_dir / "bot.log", "a")
+            log_fh = open(agent_dir / "bot.log", "a", encoding="utf-8")
             try:
                 proc = subprocess.Popen(
                     [sys.executable, str(main_py)],

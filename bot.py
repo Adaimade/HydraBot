@@ -945,7 +945,7 @@ class TelegramBot:
 
             version_file = Path(__file__).parent / "VERSION"
             if version_file.exists():
-                current = version_file.read_text().strip()
+                current = version_file.read_text(encoding="utf-8").strip()
                 if latest != current:
                     print(f"\n⚠️  新版本可用！({current} → {latest})")
                     print(f"   執行以下命令更新:")

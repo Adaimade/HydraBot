@@ -20,8 +20,12 @@ import tempfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+import logging
+
 from scheduler import NotificationScheduler, parse_fire_at, REPEAT_INTERVALS
 from learning import ExperienceLog, is_likely_failure
+
+logger = logging.getLogger("hydrabot.agent")
 
 
 def _atomic_write_json(path: Path, data, **kwargs):
@@ -41,8 +45,8 @@ def _atomic_write_json(path: Path, data, **kwargs):
             except Exception:
                 pass
             raise
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("atomic write failed for %s: %s", path, exc)
 
 try:
     import cli_render  # CLI 精簡輸出（可選；缺失時不影響 TG/DC）
@@ -614,8 +618,8 @@ class AgentPool:
                     user_message=message,
                     bot_response=response,
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("record_failure error: %s", exc)
 
         self.save_session(session_id)
         return response
@@ -663,24 +667,24 @@ class AgentPool:
             for m in messages:
                 role = m.get("role", "?")
                 content = str(m.get("content", ""))
-                if len(content) > 300:
-                    content = content[:300] + "…"
+                if len(content) > 800:
+                    content = content[:400] + "\n…（中間省略）…\n" + content[-350:]
                 text_parts.append(f"[{role}] {content}")
 
             combined = "\n".join(text_parts)
-            if len(combined) > 6000:
-                combined = combined[:6000] + "\n…（已截斷）"
+            if len(combined) > 12000:
+                combined = combined[:12000] + "\n…（已截斷）"
 
             prompt = (
                 "請將以下多輪對話壓縮為重點摘要（繁體中文），保留關鍵決策、已完成事項、"
-                "待辦事項、重要數據。用簡潔列點呈現，不超過 500 字：\n\n"
+                "待辦事項、重要程式碼片段與數據。用簡潔列點呈現，不超過 800 字：\n\n"
                 f"{combined}"
             )
 
             if client.provider == "anthropic":
                 resp = client.client.messages.create(
                     model=client.model,
-                    max_tokens=600,
+                    max_tokens=1000,
                     messages=[{"role": "user", "content": prompt}],
                 )
                 if hasattr(resp, "usage") and resp.usage:
@@ -691,7 +695,7 @@ class AgentPool:
             else:
                 resp = client.client.chat.completions.create(
                     model=client.model,
-                    max_tokens=600,
+                    max_tokens=1000,
                     messages=[
                         {"role": "system", "content": "你是摘要助手。"},
                         {"role": "user", "content": prompt},
@@ -702,7 +706,8 @@ class AgentPool:
                         getattr(resp.usage, "prompt_tokens", 0),
                         getattr(resp.usage, "completion_tokens", 0))
                 return resp.choices[0].message.content if resp.choices else None
-        except Exception:
+        except Exception as exc:
+            logger.warning("context compaction failed: %s", exc)
             return None
 
     # ─────────────────────────────────────────────
@@ -745,7 +750,8 @@ class AgentPool:
                     "prompt_tokens": 0, "completion_tokens": 0, "api_calls": 0,
                 })
             return True
-        except Exception:
+        except Exception as exc:
+            logger.warning("load_session failed for %s: %s", session_id, exc)
             return False
 
     def list_saved_sessions(self) -> list[str]:
@@ -758,8 +764,8 @@ class AgentPool:
         self.reset_py_namespace(session_id)
         try:
             self._session_file(session_id).unlink(missing_ok=True)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("session file cleanup failed: %s", exc)
 
     # ─────────────────────────────────────────────
     # Model management
@@ -1663,8 +1669,8 @@ class AgentPool:
                 self._send_func(session_id, text),
                 self._loop,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("tool trace send failed: %s", exc)
 
     def _record_usage(self, session_id, prompt_tokens: int, completion_tokens: int):
         with self._usage_lock:
@@ -2299,10 +2305,11 @@ class AgentPool:
         return "\n".join(lines)
 
 
-    def shutdown(self):
+    def shutdown(self, timeout: float = 10.0):
         """Gracefully shut down: stop scheduler, drain thread pool."""
         self.scheduler.stop()
-        self._executor.shutdown(wait=False)
+        self._executor.shutdown(wait=True, cancel_futures=True)
+        logger.info("AgentPool shutdown complete")
 
 
 # Backward-compat alias (bot.py imports Agent)

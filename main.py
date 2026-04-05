@@ -84,7 +84,7 @@ def load_config(
             "max_history": 50,
         }
         config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(json.dumps(template, indent=2, ensure_ascii=False))
+        config_path.write_text(json.dumps(template, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"✅ 已建立 {config_path}")
         print("   請填寫您的憑證後重新執行。")
         sys.exit(0)

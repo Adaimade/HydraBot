@@ -11,13 +11,13 @@ PORT = int(os.environ.get("PORT", 8080))
 
 def read_config():
     try:
-        return json.loads((BASE / "config.json").read_text())
+        return json.loads((BASE / "config.json").read_text(encoding="utf-8-sig"))
     except Exception:
         return {}
 
 def read_version():
     try:
-        return (BASE / "VERSION").read_text().strip()
+        return (BASE / "VERSION").read_text(encoding="utf-8").strip()
     except Exception:
         return "?"
 
