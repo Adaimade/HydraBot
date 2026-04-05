@@ -80,7 +80,7 @@ Write-Host $banner -ForegroundColor Cyan
 try {
     $ver = (Invoke-RestMethod "$REPO/VERSION").Trim()
 } catch {
-    $ver = "1.1.0"
+    $ver = "2.0.0"
 }
 Write-Host "  Self-expanding AI Assistant（Telegram / Discord） " -NoNewline -ForegroundColor White
 Write-Host "v$ver" -ForegroundColor Green

@@ -31,7 +31,7 @@ cat << 'BANNER'
         |___/
 BANNER
 printf "${NC}"
-REMOTE_VER=$(curl -fsSL --max-time 10 "$REPO/VERSION" 2>/dev/null | tr -d '[:space:]') || REMOTE_VER="1.1.0"
+REMOTE_VER=$(curl -fsSL --max-time 10 "$REPO/VERSION" 2>/dev/null | tr -d '[:space:]') || REMOTE_VER="2.0.0"
 printf "${BOLD}  Self-expanding AI Assistant（Telegram / Discord） ${G}v${REMOTE_VER}${NC}\n"
 printf "${DIM}  https://github.com/Adaimade/HydraBot${NC}\n\n"
 

@@ -3,7 +3,7 @@
 > **支援 Telegram / Discord / CLI 的自我擴展 AI 助手**
 > 運行在你本地機器上的 AI 助手，透過 Telegram、Discord 或 CLI 與之對話，能執行程式碼、管理檔案、並行派出子代理，甚至在執行時自行建立新工具來擴展自身能力——就像九頭蛇一樣，砍掉一頭會再長出更多。
 
-[![Version](https://img.shields.io/badge/version-1.2.0-blue)](VERSION)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue)](VERSION)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 

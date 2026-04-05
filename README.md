@@ -4,9 +4,9 @@
 > Build, debug, run shell/Python, schedule tasks, and spawn parallel sub-agents on your own machine.
 > HydraBot can also create and hot-load new tools at runtime (`create_tool`) to expand itself.
 
-[Version](VERSION)
-[Python](https://www.python.org/)
-[License](LICENSE)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue)](VERSION)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 [中文文件](README.zh-TW.md)
 
