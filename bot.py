@@ -7,9 +7,11 @@ import asyncio
 import html
 import json
 import logging
+import os
 import platform
 import re
 import sys
+import tempfile
 from pathlib import Path
 from telegram import Update, BotCommand
 from telegram.ext import (
@@ -117,10 +119,22 @@ class TelegramBot:
         try:
             data = json.loads(config_path.read_text(encoding="utf-8-sig"))
             data["authorized_users"] = sorted(self.authorized_users)
-            config_path.write_text(
-                json.dumps(data, indent=2, ensure_ascii=False),
-                encoding="utf-8",
+            text = json.dumps(data, indent=2, ensure_ascii=False)
+            fd, tmp = tempfile.mkstemp(
+                dir=str(config_path.parent),
+                suffix=".tmp",
+                prefix=f".{config_path.stem}_",
             )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(text)
+                Path(tmp).replace(config_path)
+            except Exception:
+                try:
+                    Path(tmp).unlink(missing_ok=True)
+                except Exception:
+                    pass
+                raise
         except Exception as e:
             print(f"⚠️ Failed to save whitelist to config.json: {e}")
 

@@ -81,6 +81,9 @@ cd ~/你的專案
 hydrabot            # 無子命令：有填 TG/DC 則等同 start，否則等同 cli
 hydrabot start      # 啟動 Bot（Telegram/Discord）
 hydrabot cli        # 僅終端機互動（可不設即時通）
+hydrabot run "..."  # 單次非互動執行（印出結果後退出）
+hydrabot cli --dry-run
+hydrabot run "..." --dry-run
 hydrabot update     # 更新到最新版本（保留您的 config）
 hydrabot config     # 編輯設定
 hydrabot status     # 查看狀態
@@ -108,6 +111,8 @@ cd C:\path\to\HydraBot
 # 或直接用 Python
 .\venv\Scripts\python.exe main.py
 .\venv\Scripts\python.exe main.py --cli
+.\venv\Scripts\python.exe main.py --prompt "列出目前專案檔案"
+.\venv\Scripts\python.exe main.py --prompt "預覽工具行為" --dry-run
 ```
 
 **Linux / macOS：**
@@ -115,10 +120,28 @@ cd C:\path\to\HydraBot
 cd /path/to/HydraBot
 ./hydrabot start
 ./hydrabot cli
+./hydrabot run "列出目前專案檔案"
+./hydrabot cli --dry-run
+./hydrabot run "預覽工具行為" --dry-run
 # 或
 source venv/bin/activate
 python main.py
 python main.py --cli
+python main.py --prompt "列出目前專案檔案"
+python main.py --prompt "預覽工具行為" --dry-run
+```
+
+### CLI 常用內建指令
+
+```text
+/help
+/reset
+/models 或 /model N
+/usage
+/save
+/resume
+/tools
+/quit
 ```
 
 ---
@@ -268,5 +291,6 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ## 🆘 需要幫助？
 
 - 查看完整 [README](README.md) 與 [README.zh-TW.md](README.zh-TW.md)
+- 內建工具與自訂工具細項：[TOOLS.md](TOOLS.md) · [TOOLS.zh-TW.md](TOOLS.zh-TW.md)
 - 人設與工具約束：[SOUL.md](SOUL.md)
 - 提交 Issue: https://github.com/Adaimade/HydraBot/issues

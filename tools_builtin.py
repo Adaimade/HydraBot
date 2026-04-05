@@ -10,9 +10,12 @@ import os
 import sys
 import json
 import shutil
+import time
+import queue
 import subprocess
 import traceback
 import threading
+from collections import deque
 from pathlib import Path
 from contextlib import redirect_stdout, redirect_stderr
 from typing import TYPE_CHECKING
@@ -430,9 +433,10 @@ def get_builtin_tools(agent: "Agent") -> list:
     if not hasattr(agent, "_mcp_servers"):
         agent._mcp_servers = {}
 
-    def mcp_connect(command: str, server_name: str = None) -> str:
+    def mcp_connect(command: str, server_name: str = None, timeout_sec: int = 12) -> str:
         """Start an MCP server process and register its tools."""
         sname = server_name or command.split()[0]
+        timeout_sec = max(1, int(timeout_sec))
 
         # Prevent duplicate connections
         if sname in agent._mcp_servers:
@@ -462,33 +466,89 @@ def get_builtin_tools(agent: "Agent") -> list:
         except Exception as e:
             return f"❌ 啟動失敗: {e}"
 
+        stop_event = threading.Event()
         lock = threading.Lock()
         req_counter = [0]
+        resp_queue: "queue.Queue[dict]" = queue.Queue()
+        stderr_tail = deque(maxlen=80)
+
+        def _stderr_hint() -> str:
+            if not stderr_tail:
+                return ""
+            tail = "\n".join(list(stderr_tail)[-6:])
+            return f"\n最近 stderr:\n```\n{tail}\n```"
+
+        def _stop_process() -> None:
+            stop_event.set()
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    try:
+                        proc.wait(timeout=1)
+                    except Exception:
+                        pass
+
+        def _pump_stdout() -> None:
+            while not stop_event.is_set():
+                line = proc.stdout.readline()
+                if not line:
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except Exception:
+                    continue
+                if isinstance(payload, dict):
+                    resp_queue.put(payload)
+
+        def _pump_stderr() -> None:
+            while not stop_event.is_set():
+                line = proc.stderr.readline()
+                if not line:
+                    break
+                stderr_tail.append(line.rstrip())
+
+        threading.Thread(target=_pump_stdout, name=f"mcp-{sname}-stdout", daemon=True).start()
+        threading.Thread(target=_pump_stderr, name=f"mcp-{sname}-stderr", daemon=True).start()
 
         def call_mcp(method: str, params: dict = None) -> dict:
             with lock:
                 req_counter[0] += 1
+                req_id = req_counter[0]
                 req = json.dumps({
                     "jsonrpc": "2.0",
-                    "id": req_counter[0],
+                    "id": req_id,
                     "method": method,
                     "params": params or {},
                 })
                 proc.stdin.write(req + "\n")
                 proc.stdin.flush()
-                line = proc.stdout.readline()
-                if not line:
-                    raise RuntimeError("MCP server closed stdout")
-                return json.loads(line)
+                deadline = time.time() + max(1, int(timeout_sec))
+                while time.time() < deadline:
+                    if proc.poll() is not None:
+                        raise RuntimeError(f"MCP server exited (code={proc.returncode}){_stderr_hint()}")
+                    wait = max(0.05, deadline - time.time())
+                    try:
+                        resp = resp_queue.get(timeout=min(0.5, wait))
+                    except queue.Empty:
+                        continue
+                    if resp.get("id") == req_id:
+                        return resp
+                raise TimeoutError(f"MCP `{method}` timeout after {timeout_sec}s{_stderr_hint()}")
 
         try:
             resp = call_mcp("tools/list")
         except Exception as e:
-            proc.terminate()
+            _stop_process()
             return f"❌ MCP 通訊失敗: {e}"
 
         if "error" in resp:
-            proc.terminate()
+            _stop_process()
             return f"❌ MCP 錯誤: {resp['error']}"
 
         tools = resp.get("result", {}).get("tools", [])
@@ -520,6 +580,8 @@ def get_builtin_tools(agent: "Agent") -> list:
             "proc": proc,
             "tools": tool_names,
             "command": command,
+            "timeout_sec": timeout_sec,
+            "stop_event": stop_event,
         }
 
         return (
@@ -535,12 +597,19 @@ def get_builtin_tools(agent: "Agent") -> list:
 
         info = agent._mcp_servers.pop(server_name)
         proc = info["proc"]
+        stop_event = info.get("stop_event")
+        if stop_event is not None:
+            stop_event.set()
         if proc.poll() is None:
             proc.terminate()
             try:
                 proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
                 proc.kill()
+                try:
+                    proc.wait(timeout=1)
+                except Exception:
+                    pass
 
         for tn in info["tools"]:
             agent.tools.pop(tn, None)
@@ -558,6 +627,7 @@ def get_builtin_tools(agent: "Agent") -> list:
             tools_str = ", ".join(f"`{t}`" for t in info["tools"])
             lines.append(f"{status} **{name}**")
             lines.append(f"   命令: `{info['command']}`")
+            lines.append(f"   timeout: `{info.get('timeout_sec', 12)}s`")
             lines.append(f"   工具: {tools_str}")
         return "\n".join(lines)
 
@@ -983,6 +1053,7 @@ def get_builtin_tools(agent: "Agent") -> list:
                 "properties": {
                     "command":     {"type": "string", "description": "啟動命令，如 'python mcp_servers/myserver.py'"},
                     "server_name": {"type": "string", "description": "自訂伺服器名稱（可選）"},
+                    "timeout_sec": {"type": "integer", "description": "MCP 請求 timeout 秒數（預設 12）"},
                 },
                 "required": ["command"],
             },

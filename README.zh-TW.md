@@ -11,6 +11,108 @@
 
 ---
 
+## 為什麼選 HydraBot
+
+- **本地優先**：Shell、Python、檔案與工具都在你的機器上執行。
+- **多介面**：Telegram / Discord / CLI 共用同一套 agent 核心。
+- **並行工作**：`spawn_agent` + `run_pipeline` 處理多步驟、多模型任務。
+- **自我擴展**：執行期動態建立工具（`create_tool`）。
+- **偏生產的安全**：權限模式、黑名單、`--dry-run`、JSON 原子寫入、gate 政策。
+
+## 三分鐘上手
+
+### Linux / macOS
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/Adaimade/HydraBot/main/install.sh)
+hydrabot
+```
+
+### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/Adaimade/HydraBot/main/install.ps1 | iex
+hydrabot
+```
+
+未帶子指令的 `hydrabot` 會自動選擇：
+- 已設定 Telegram/Discord token 時 → `start`
+- 未設定即時通 token 時 → `cli`
+
+## 選擇你的模式
+
+### 1) 僅 CLI（不需 Telegram/Discord）
+
+```bash
+hydrabot cli
+hydrabot run "summarize this repo structure"
+hydrabot run "preview tool behavior" --dry-run
+```
+
+### 2) 即時通 Bot（Telegram/Discord）
+
+```bash
+hydrabot start
+```
+
+### 3) 實際執行前先安全預覽
+
+```bash
+hydrabot cli --dry-run
+hydrabot run "refactor src/utils.py" --dry-run
+```
+
+---
+
+## HydraBot vs 典型 Agent Harness
+
+許多專案提供的是**精簡 CLI 迴圈**（工具 + 記憶體 + 選用 MCP）。HydraBot 面向**真實專案上的日常使用**，把通道與排程內建進產品形態。
+
+| 面向 | 典型 harness | HydraBot |
+|------|--------------|----------|
+| **介面** | 多半僅 CLI | **Telegram、Discord、CLI** — 同一核心 |
+| **排程** | 少有或需外掛 | **內建**通知與 LLM 任務（`schedule_*`） |
+| **多模型** | 常為單一模型 | **主力 / 快速 / 日常** 分層 + `spawn_routing` |
+| **並行** | 視專案而定 | **`spawn_agent`**、**`run_pipeline`**、唯讀工具並行 |
+| **自我擴展** | Skills / 外掛 | **`create_tool`**（Python 熱載入）+ **MCP** |
+| **安全** | 視專案而定 | **`permission_mode`**、黑名單、**`--dry-run`**、JSON 原子寫入 |
+
+*此處「典型 harness」指輕量、以 CLI 為主的 agent 框架；各專案命名不同。*
+
+---
+
+## 使用情境（可直接複製）
+
+**1) 在專案目錄下快速檢視程式庫（CLI）**
+
+```bash
+cd ~/your-project
+hydrabot run "列出頂層檔案，然後用 5 個要點說明這個 repo 在做什麼。"
+```
+
+**2) 讓模型動檔前先 dry-run**
+
+```bash
+cd ~/your-project
+hydrabot run "重構 utils 提升可讀性" --dry-run
+```
+
+**3) 互動寫程式並可還原長會話**
+
+```bash
+hydrabot cli
+# CLI 內：長任務後 `/save`，下次 `/resume`，`/usage` 查看 token 統計
+```
+
+**4) 團隊頻道 Bot（Telegram 或 Discord）**
+
+```bash
+hydrabot start
+# 成員在頻道內對話；群組／Topic 脈絡各自隔離。見 /timezone、/notify。
+```
+
+---
+
 ## 特色功能
 
 | 功能 | 說明 |
@@ -27,7 +129,32 @@
 | 📊 **進度推送** | 子代理執行中可即時呼叫 `report_progress` 推送進度更新 |
 | 🏢 **多專案隔離** | 每個 Telegram 群組 / Topic 擁有完全獨立的對話脈絡 |
 | 🔌 **MCP 支援** | 可連接 MCP Server，動態擴充外部工具能力 |
-| ✅ **品質工具與 Gate 政策** | 可選的 `tools/` 內建工具（`run_validation`、`format_and_fix`、`quality_gate`、`quick_fix_then_gate`、`code_task_guard`），以及 `config.json` 內工具追蹤與完成／gate 守門設定 |
+| ✅ **品質工具與 Gate 政策** | 可選的 `tools/` 輔助（Ruff／mypy／pytest 流程）與 `config.json` 守門設定 — 詳見 [TOOLS.zh-TW.md](TOOLS.zh-TW.md) |
+
+---
+
+## 指令速查
+
+```bash
+hydrabot start                # Bot 模式（Telegram/Discord）
+hydrabot cli                  # 互動終端機
+hydrabot run "..."            # 單次非互動提示
+hydrabot cli --dry-run        # 預覽工具呼叫，無副作用
+hydrabot run "..." --dry-run
+hydrabot config               # 編輯 config.json
+hydrabot status               # 執行期摘要
+hydrabot update               # 更新到最新版
+```
+
+---
+
+## 文件導覽
+
+- **快速上手與 PATH**：[QUICKSTART.md](QUICKSTART.md)
+- **英文說明**：[README.md](README.md)
+- **工具參考（內建一覽、品質工具、自訂工具）**：[TOOLS.zh-TW.md](TOOLS.zh-TW.md) · [TOOLS.md](TOOLS.md)
+- **人格規則**：[SOUL.md](SOUL.md)
+- **設定範本**：[config.example.json](config.example.json)
 
 ---
 
@@ -108,6 +235,9 @@ pip install -r requirements_rag.txt
 
 ```bash
 hydrabot start          # 啟動 Bot
+hydrabot run "..."      # 單次非互動執行（印出結果後退出）
+hydrabot cli --dry-run  # 僅預覽工具呼叫，不實際執行
+hydrabot run "..." --dry-run
 hydrabot update         # 更新到最新版本
 hydrabot update --force # 強制更新（即使版本相同）
 hydrabot config         # 編輯 config.json
@@ -138,11 +268,20 @@ python main.py cli
 CLI 內建指令：
 - `/help`
 - `/reset`
-- `/models`
+- `/models` / `/model N`
+- `/usage`
+- `/save`
+- `/resume`
 - `/tools`
 - `/quit`（或 `/exit`）
 
 **終端機介面**：預設啟用精簡輸出（`cli_compact_ui`，見 `config.example.json`）— 工具列以 `● Bash(…)` 階層顯示、長輸出摺疊、子代理推送以邊框區隔，體驗對齊 Claude Code CLI 類型。`cli_compact_ui: false` 可還原舊版；`NO_COLOR=1` 關閉 ANSI。
+
+**CLI 執行期功能補充**：
+- 會話自動儲存與自動恢復（`sessions/*.json`）
+- CLI 串流輸出（逐 chunk 顯示）
+- `--dry-run` 預覽工具呼叫（零副作用）
+- 唯讀類工具可能並行執行以降低延遲；寫入類工具維持循序以確保安全
 
 ---
 
@@ -220,6 +359,9 @@ CLI 內建指令：
 | `enforce_gate_policy` | 是否啟用「QA／改碼」與 gate 相關的執行階段規則（預設 `true`） |
 | `gate_forbidden_in_qa` | 一般問答回合是否阻擋 gate 類工具（預設 `true`） |
 | `require_gate_before_done` | 改碼任務若未通過 gate 卻宣告「完成」，是否在回覆後附加提醒（預設 `true`） |
+| `permission_mode` | 工具安全模式：`auto`、`default`（CLI 寫入前確認）、`readonly` |
+| `denied_commands` | Shell 指令黑名單（子字串比對，例如 `rm -rf /`） |
+| `denied_paths` | `read_file` / `write_file` 的路徑黑名單前綴 |
 | `max_tokens` | 每次回覆最大 token 數（預設 4096） |
 | `max_history` | 保留的對話輪數（預設 50） |
 | `model_roles` | 三層角色對應 `models` 陣列索引：`primary`（主力）、`fast`（快速）、`daily`（日常） |
@@ -227,7 +369,7 @@ CLI 內建指令：
 
 ### 品質工具（選用）
 
-專案內建於 `tools/` 的輔助工具（亦可透過 `create_tool` 擴充）：**`format_and_fix`**、**`run_validation`**、**`quality_gate`**、**`quick_fix_then_gate`**、**`code_task_guard`**。它們以 **`python -m ruff` / `mypy` / `pytest`** 執行，請在 **HydraBot 同一個 venv** 內安裝對應套件。使用時機與敘事層約束另見根目錄 **[SOUL.md](SOUL.md)**。
+與 Ruff／mypy／pytest 及 gate 相關的選用工具位於 `tools/`，並與 `config.json` 連動。**完整列表與說明：** [TOOLS.zh-TW.md](TOOLS.zh-TW.md) · 敘事層約束見 **[SOUL.md](SOUL.md)**。
 
 ### 三層模型與子代理路由
 
@@ -401,61 +543,9 @@ HydraBot 提供三個層次的隔離，對應不同使用情境：
 - 工作有明確*交付物*（程式、應用、git 倉庫、雲端部署）→ **子代理 Bot**
 - 在同一個專案中，需要*並行分工*（同時蒐集資料、撰寫、校對）→ 在子代理 Bot 內使用 **`spawn_agent`**
 
-## 內建工具一覽
+## 工具參考
 
-| 工具 | 說明 |
-|------|------|
-| `execute_python` | 執行 Python 程式碼（變數跨次呼叫保留） |
-| `execute_shell` | 執行 Shell 指令，支援 timeout 與 cwd |
-| `read_file` | 讀取本地檔案，支援 offset / limit 分頁 |
-| `write_file` | 寫入或追加本地檔案 |
-| `list_files` | 列出目錄內容（支援 glob pattern） |
-| `install_package` | `pip install` 安裝 Python 套件 |
-| `http_request` | HTTP GET / POST 等網路請求 |
-| `read_memory` | 從 memory.json 讀取持久記憶 |
-| `write_memory` | 寫入持久記憶 |
-| `create_tool` | 撰寫並熱載入新工具（自我擴展核心） |
-| `log_experience` | 把成功/失敗/洞見記錄到 `experience_log.json` |
-| `recall_experience` | 依語意檢索相似過往經驗，輔助排錯與複用解法 |
-| `spawn_agent` | 並行子代理；依 `task_role` 自動選主力／快速／日常，可選 `model_index` 覆寫 |
-| `schedule_notification` | 建立定時通知排程 |
-| `list_notifications` | 列出當前會話的所有排程 |
-| `cancel_notification` | 取消指定排程 |
-
----
-
-## 自我擴展：建立自定義工具
-
-Bot 可在執行時自行建立工具，也可以手動放置：
-
-```
-HydraBot/
-└── tools/
-    ├── my_tool.py
-    └── weather.py
-```
-
-工具格式：
-
-```python
-# tools/hello.py
-def get_tools():
-    def say_hello(name: str) -> str:
-        return f"Hello, {name}!"
-
-    schema = {
-        "name": "say_hello",
-        "description": "向某人打招呼",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "對方名字"}
-            },
-            "required": ["name"]
-        }
-    }
-    return [("say_hello", schema, say_hello)]
-```
+HydraBot 提供檔案系統、Shell、排程、MCP、記憶體、子代理與自我擴展等工具。**內建完整清單、`tools/` 下選用品質工具，以及自訂工具的 Python 格式：** [TOOLS.zh-TW.md](TOOLS.zh-TW.md) · [TOOLS.md](TOOLS.md)。
 
 ---
 

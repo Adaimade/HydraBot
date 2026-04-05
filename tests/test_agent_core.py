@@ -374,3 +374,15 @@ class TestSkills:
         sid = (61, None)
         section = pool._load_skills_section(sid)
         assert section == ""
+
+
+# ══════════════════════════════════════════════════════════════
+# 10. MCP 穩定性相關 schema
+# ══════════════════════════════════════════════════════════════
+
+class TestMcpToolSchema:
+    def test_mcp_connect_has_timeout_param(self, tmp_path):
+        pool = _make_pool(tmp_path)
+        schema, _ = pool.tools["mcp_connect"]
+        props = schema["input_schema"]["properties"]
+        assert "timeout_sec" in props

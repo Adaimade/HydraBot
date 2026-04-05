@@ -2053,7 +2053,8 @@ class AgentPool:
         if not md_files:
             return ""
 
-        history = self.conversations.get(session_id, [])
+        with self._conv_lock:
+            history = list(self.conversations.get(session_id, []))
         user_msgs = [m["content"] for m in history if m.get("role") == "user"]
         query = (user_msgs[-1] if user_msgs else "").lower()
 
@@ -2098,7 +2099,8 @@ class AgentPool:
         )
 
         if session_id is not None:
-            idx = self.user_model.get(session_id, 0)
+            with self._conv_lock:
+                idx = self.user_model.get(session_id, 0)
             cur = self.model_configs[idx % len(self.model_configs)]
             cur_info = f"模型 {idx}: **{cur.get('name', cur['model'])}** ({cur['provider']})"
             tz_offset = self.get_timezone(session_id)
@@ -2135,7 +2137,8 @@ class AgentPool:
         exp_section = ""
         if session_id is not None:
             # 用最近一條用戶訊息作為查詢依據
-            history = self.conversations.get(session_id, [])
+            with self._conv_lock:
+                history = list(self.conversations.get(session_id, []))
             user_msgs = [m["content"] for m in history if m.get("role") == "user"]
             query = user_msgs[-1] if user_msgs else ""
             exp_text = self.experience.format_for_prompt(query)
@@ -2280,9 +2283,7 @@ class AgentPool:
                 f"{chat_id}:{thread_id}": offset
                 for (chat_id, thread_id), offset in self.user_timezones.items()
             }
-            self._tz_file.write_text(
-                json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
+            _atomic_write_json(self._tz_file, data)
         except Exception as e:
             print(f"⚠️  Failed to save timezones.json: {e}")
 
@@ -2308,6 +2309,23 @@ class AgentPool:
     def shutdown(self, timeout: float = 10.0):
         """Gracefully shut down: stop scheduler, drain thread pool."""
         self.scheduler.stop()
+        # Stop MCP servers if connected (spawned by tools_builtin.mcp_connect)
+        mcp_servers = getattr(self, "_mcp_servers", {})
+        for _name, info in list(mcp_servers.items()):
+            try:
+                stop_event = info.get("stop_event")
+                if stop_event is not None:
+                    stop_event.set()
+                proc = info.get("proc")
+                if proc is not None and proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=3)
+                    except Exception:
+                        proc.kill()
+            except Exception as exc:
+                logger.debug("mcp shutdown cleanup failed for %s: %s", _name, exc)
+        mcp_servers.clear()
         self._executor.shutdown(wait=True, cancel_futures=True)
         logger.info("AgentPool shutdown complete")
 
