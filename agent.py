@@ -8,6 +8,7 @@ Includes: scheduled notifications and real-time task progress reporting.
 from __future__ import annotations
 
 import json
+import inspect
 import asyncio
 import importlib.util
 import os
@@ -1642,10 +1643,40 @@ class AgentPool:
                 turn_state["gate_attempted"] = True
                 turn_state["gate_passed"] = turn_state.get("gate_passed", False) or self._did_gate_pass(result)
             return result
+        except TypeError as e:
+            if turn_state is not None and name in self.GATE_TOOL_NAMES:
+                turn_state["gate_attempted"] = True
+            err_s = str(e).lower()
+            if (
+                "unexpected keyword" in err_s
+                or "got an unexpected" in err_s
+                or "missing" in err_s
+                and "required" in err_s
+                or "positional argument" in err_s
+            ):
+                return self._tool_call_typeerror_hint(name, func, inputs, e)
+            return f"❌ 工具 '{name}' 錯誤:\n```\n{traceback.format_exc()}\n```"
         except Exception:
             if turn_state is not None and name in self.GATE_TOOL_NAMES:
                 turn_state["gate_attempted"] = True
             return f"❌ 工具 '{name}' 錯誤:\n```\n{traceback.format_exc()}\n```"
+
+    def _tool_call_typeerror_hint(
+        self, tool_name: str, func, inputs: dict, exc: TypeError
+    ) -> str:
+        """將參數名錯誤的 TypeError 轉成短提示，避免模型在長 stack 中無法自修。"""
+        try:
+            sig = inspect.signature(func)
+            valid = ", ".join(sig.parameters.keys()) or "（無）"
+        except (TypeError, ValueError):
+            valid = "（無法列舉）"
+        got = ", ".join(inputs.keys()) or "（空）"
+        return (
+            f"❌ 工具 `{tool_name}` 參數不符: {exc}\n"
+            f"**此工具接受的參數名**：{valid}\n"
+            f"**本次傳入的鍵**：{got}\n"
+            "請對照上表修正（例如 `list_files` 可用 `pattern` 或 `name` 篩 glob，不要用不存在的參數名）。"
+        )
 
     def _can_parallelize(self, tool_names: list[str]) -> bool:
         """多個工具呼叫時，若全為 PARALLEL_SAFE 則可並行。"""
@@ -2145,7 +2176,16 @@ class AgentPool:
             if exp_text:
                 exp_section = f"\n{exp_text}\n"
 
-        return f"""你是 HydraBot，一個強大的本地 AI 助手，透過 Telegram 與用戶互動，運行在用戶的機器上。你像九頭蛇一樣能不斷長出新的能力——每當用戶需要新功能，你就能自己建立工具來滿足需求。{soul_section}{exp_section}
+        if session_id is None:
+            channel_line = (
+                "你目前為**子代理**，與用戶的直接互動由主力代理轉述。"
+            )
+        elif self._is_cli_session(session_id):
+            channel_line = "你透過**終端機（CLI）**與用戶互動，"
+        else:
+            channel_line = "你透過 **Telegram** 等通道與用戶互動，"
+
+        return f"""你是 HydraBot，一個強大的本地 AI 助手。{channel_line}運行在用戶的機器上。你像九頭蛇一樣能不斷長出新的能力——每當用戶需要新功能，你就能自己建立工具來滿足需求。{soul_section}{exp_section}
 ## 目前使用
 {cur_info}
 {tz_info}
@@ -2208,7 +2248,9 @@ class AgentPool:
 - 積極主動使用工具，不只給建議
 - 並行任務優先考慮 `run_pipeline` 或 `spawn_agent`
 - 高風險操作前先確認
-- 保持簡潔友善{skills_section}"""
+- 保持簡潔友善
+- 用戶問「目前哪個模型／專案路徑／工作目錄」時，請從本提示的 **## 目前使用** 與 **## 目錄脈絡** 如實引用，勿臆測
+- **禁止**在未出現 `write_file` 成功回傳（含「已寫入」與驗證預覽）時，宣稱已在工作區建立或覆寫檔案；若僅規劃／模擬，請明說「尚未寫入」{skills_section}"""
 
     # ─────────────────────────────────────────────
     # Tool management

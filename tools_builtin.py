@@ -18,7 +18,7 @@ import threading
 from collections import deque
 from pathlib import Path
 from contextlib import redirect_stdout, redirect_stderr
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from agent import Agent
@@ -122,7 +122,18 @@ def get_builtin_tools(agent: "Agent") -> list:
             p.parent.mkdir(parents=True, exist_ok=True)
             with p.open(mode, encoding="utf-8") as f:
                 f.write(content)
-            return f"✅ 已寫入 {p}（{p.stat().st_size:,} bytes）"
+            size = p.stat().st_size
+            # 以寫入內容前幾行做驗證摘要（避免模型宣稱已寫入卻無法對齊工具回傳）
+            lines = content.splitlines()
+            preview = lines[:8]
+            excerpt = "\n".join(
+                f"{i + 1:4d} | {(line[:220] + '…') if len(line) > 220 else line}"
+                for i, line in enumerate(preview)
+            ) or "  （空檔或僅空白）"
+            return (
+                f"✅ 已寫入 {p}（{size:,} bytes）\n"
+                f"📎 寫入驗證（內容前 {len(preview)} 行預覽）：\n```\n{excerpt}\n```"
+            )
         except Exception as e:
             return f"❌ {e}"
 
@@ -130,12 +141,21 @@ def get_builtin_tools(agent: "Agent") -> list:
     # list_files
     # ─────────────────────────────────────────────────────────────
 
-    def list_files(path: str = ".", pattern: str = "*", max_items: int = 60) -> str:
+    def list_files(
+        path: str = ".",
+        pattern: str = "*",
+        max_items: int = 60,
+        name: Optional[str] = None,
+    ) -> str:
+        """列出目錄內容。`name` 為 `pattern` 的別名，與 `find_files` 命名對齊，避免模型誤傳參。"""
         try:
+            eff_pattern = pattern
+            if name is not None and str(name).strip() != "":
+                eff_pattern = name
             p = agent.resolve_workspace_path(path)
             if not p.exists():
                 return f"❌ 路徑不存在: {path}"
-            items = sorted(p.glob(pattern))[:max_items]
+            items = sorted(p.glob(eff_pattern))[:max_items]
             lines = [f"📁 {p.absolute()}/"]
             for item in items:
                 rel = item.relative_to(p)
@@ -902,12 +922,16 @@ def get_builtin_tools(agent: "Agent") -> list:
 
         ("list_files", {
             "name": "list_files",
-            "description": "列出目錄中的檔案。",
+            "description": (
+                "列出目錄中的檔案／子目錄（不遞迴）。"
+                "篩檔名請用 `pattern` 或 `name`（兩者擇一；`name` 與 find_files 參數名一致）。"
+            ),
             "input_schema": {
                 "type": "object",
                 "properties": {
                     "path":      {"type": "string",  "description": "目錄路徑（預設目前目錄）"},
-                    "pattern":   {"type": "string",  "description": "glob 模式（預設 *）"},
+                    "pattern":   {"type": "string",  "description": "glob 模式（預設 *）；與 `name` 擇一即可"},
+                    "name":      {"type": "string",  "description": "與 `pattern` 相同用途之別名（篩檔名時可只用此參數）"},
                     "max_items": {"type": "integer", "description": "最多顯示數量（預設 60）"},
                 },
             },

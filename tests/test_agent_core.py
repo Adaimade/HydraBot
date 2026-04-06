@@ -293,7 +293,27 @@ class TestTools:
         _, fn = pool.tools["write_file"]
         result = fn(path="out.txt", content="hello world")
         assert "✅" in result
+        assert "寫入驗證" in result
+        assert "hello world" in result
         assert (tmp_path / "out.txt").read_text(encoding="utf-8") == "hello world"
+
+    def test_list_files_accepts_name_alias(self, tmp_path):
+        """與 find_files 對齊：模型誤傳 name= 時仍可列出（事件報告 INCIDENT）。"""
+        pool = _make_pool(tmp_path)
+        (tmp_path / "a.py").write_text("x", encoding="utf-8")
+        (tmp_path / "b.md").write_text("y", encoding="utf-8")
+        _, fn = pool.tools["list_files"]
+        result = fn(path=".", name="*.py")
+        assert "a.py" in result
+        assert "b.md" not in result
+
+    def test_call_tool_typeerror_hint(self, tmp_path):
+        pool = _make_pool(tmp_path)
+        _, fn = pool.tools["list_files"]
+        # 故意傳錯誤參數名（舊版模型常見）
+        result = pool._call_tool("list_files", {"path": ".", "typo_param": "x"}, pool.tools)
+        assert "參數不符" in result or "unexpected" in result.lower()
+        assert "pattern" in result or "name" in result
 
     def test_call_tool_missing(self, tmp_path):
         pool = _make_pool(tmp_path)
