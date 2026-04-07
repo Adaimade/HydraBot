@@ -158,4 +158,12 @@ TypeError: get_builtin_tools.<locals>.list_files() got an unexpected keyword arg
 
 ---
 
+## 10. 修訂紀錄
+
+| 日期 | 說明 |
+|------|------|
+| 2026-04-06 | 主線程式已依本報告第 7 節部分建議落地：`list_files` 新增與 `find_files` 對齊之 **`name` 參數**（與 `pattern` 擇一）；`write_file` 成功回傳附**內容前幾行預覽**；`agent._call_tool` 對常見 **TypeError**（錯誤參數名等）改回**短提示**（合法參數名／本次傳入鍵）；**system prompt** 依 CLI／Telegram／子代理區分互動通道，並要求未出現 `write_file` 成功回傳時不得宣稱已寫檔。實作見 `tools_builtin.py`、`agent.py`；測試見 `tests/test_agent_core.py`。 |
+
+---
+
 *本文件為 HydraBot 專案內部文件，用於記錄一次真實使用情境之結果與檢驗；若後續程式或工具行為有更新，應另增修訂版次與日期。*

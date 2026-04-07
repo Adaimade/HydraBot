@@ -76,9 +76,9 @@ Many projects ship a **minimal CLI loop** (tools + memory + optional MCP). Hydra
 | **Interfaces**     | CLI only           | **Telegram, Discord, and CLI** — same agent core                       |
 | **Scheduling**     | Rare or external   | **Built-in** notifications + LLM tasks (`schedule_*`)                  |
 | **Multi-model**    | Often single model | **Primary / fast / daily** tiers + `spawn_routing`                     |
-| **Parallel work**  | Varies             | `**spawn_agent`**, `**run_pipeline**`, read-only tool parallelization  |
-| **Self-extension** | Skills / plugins   | `**create_tool`** (Python hot-reload) + **MCP**                        |
-| **Safety**         | Varies             | `**permission_mode`**, deny-lists, `**--dry-run**`, atomic JSON writes |
+| **Parallel work**  | Varies             | **`spawn_agent`**, **`run_pipeline`**, read-only tool parallelization   |
+| **Self-extension** | Skills / plugins   | **`create_tool`** (Python hot-reload) + **MCP**                         |
+| **Safety**         | Varies             | **`permission_mode`**, deny-lists, **`--dry-run`**, atomic JSON writes  |
 
 
 *“Typical harness” here means lightweight CLI-oriented agent frameworks; names vary by project.*
@@ -120,20 +120,20 @@ hydrabot start
 ## Key Capabilities
 
 
-| Capability                        | Description                                                                                                                                                                                        |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 🤖 **Three-tier model roles**     | **Primary / fast / daily** map to `models` indices; set at install time; switch mid-chat with `/models`                                                                                            |
-| ⚡ **Sub-agent auto-routing**      | `spawn_agent` routes by task type to the right tier; primary plans and integrates—users need not pick a model per subtask                                                                          |
-| 🔧 **Self-Expansion**             | `create_tool` — the LLM can write and hot-reload new tools at runtime                                                                                                                              |
-| 🖥️ **Multi-Channel Interface**   | Supports Telegram, Discord, and local CLI mode (`python main.py --cli`)                                                                                                                            |
-| 💻 **Local Execution**            | Python / Shell code runs directly on your machine with full filesystem access                                                                                                                      |
-| ⏰ **Scheduled Notifications**     | Schedule one-time or recurring notifications pushed automatically to Telegram                                                                                                                      |
-| 🌍 **Timezone Awareness**         | First-run guide for UTC timezone setup; all notification times shown in user's local time                                                                                                          |
-| 🧠 **Persistent Memory**          | `memory.json` — store arbitrary key-value data across conversations                                                                                                                                |
-| 📚 **Learning Loop**              | `experience_log.json` + TF-IDF recall; auto-log failures and inject relevant past experience into prompts                                                                                          |
-| 📊 **Progress Reporting**         | Sub-agents can call `report_progress` in real-time during execution                                                                                                                                |
-| 🏢 **Multi-Project Isolation**    | Each Telegram group / Topic has completely independent conversation context                                                                                                                        |
-| 🔌 **MCP Support**                | Connect to MCP Servers to dynamically extend tool capabilities                                                                                                                                     |
+| Capability                        | Description                                                                                                                                     |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🤖 **Three-tier model roles**     | **Primary / fast / daily** map to `models` indices; set at install time; switch mid-chat with `/models`                                         |
+| ⚡ **Sub-agent auto-routing**      | `spawn_agent` routes by task type to the right tier; primary plans and integrates—users need not pick a model per subtask                       |
+| 🔧 **Self-Expansion**             | `create_tool` — the LLM can write and hot-reload new tools at runtime                                                                           |
+| 🖥️ **Multi-Channel Interface**   | Supports Telegram, Discord, and local CLI mode (`python main.py --cli`)                                                                         |
+| 💻 **Local Execution**            | Python / Shell code runs directly on your machine with full filesystem access                                                                   |
+| ⏰ **Scheduled Notifications**     | Schedule one-time or recurring notifications pushed automatically to Telegram                                                                   |
+| 🌍 **Timezone Awareness**         | First-run guide for UTC timezone setup; all notification times shown in user's local time                                                       |
+| 🧠 **Persistent Memory**          | `memory.json` — store arbitrary key-value data across conversations                                                                             |
+| 📚 **Learning Loop**              | `experience_log.json` + TF-IDF recall; auto-log failures and inject relevant past experience into prompts                                       |
+| 📊 **Progress Reporting**         | Sub-agents can call `report_progress` in real-time during execution                                                                             |
+| 🏢 **Multi-Project Isolation**    | Each Telegram group / Topic has completely independent conversation context                                                                     |
+| 🔌 **MCP Support**                | Connect to MCP Servers to dynamically extend tool capabilities                                                                                  |
 | ✅ **Quality tools & gate policy** | Optional `tools/` helpers (Ruff/mypy/pytest flows) and completion/gate rules in `config.json` — see [TOOLS.md](TOOLS.md#quality-tools-optional) |
 
 
@@ -159,6 +159,7 @@ hydrabot update               # Update to latest
 - **Quick start & PATH**: [QUICKSTART.md](QUICKSTART.md)
 - **Traditional Chinese docs**: [README.zh-TW.md](README.zh-TW.md)
 - **Tools (catalog, quality helpers, custom tools)**: [TOOLS.md](TOOLS.md)
+- **CLI file-tool behavior & incident write-up**: [docs/INCIDENT_REPORT_CLI_HALLUCINATION_AND_TOOL_MISMATCH.md](docs/INCIDENT_REPORT_CLI_HALLUCINATION_AND_TOOL_MISMATCH.md)
 - **Persona rules**: [SOUL.md](SOUL.md)
 - **Config template**: [config.example.json](config.example.json)
 
@@ -222,7 +223,7 @@ copy config.example.json config.json
 
 ### Optional: Connect a local HydraBot-code1.0 vector store
 
-If you use a sibling project such as **HydraBot-code1.0** (Chroma + Ollama RAG), install extra deps in the **same venv** and set the project root so HydraBot can call the built-in tool `**code1_rag_query`**:
+If you use a sibling project such as **HydraBot-code1.0** (Chroma + Ollama RAG), install extra deps in the **same venv** and set the project root so HydraBot can call the built-in tool **`code1_rag_query`**:
 
 ```bash
 pip install -r requirements_rag.txt
@@ -293,6 +294,14 @@ CLI built-in commands:
 - Streaming output in CLI (chunk-by-chunk)
 - `--dry-run` to preview all tool calls without side effects
 - Read-only tool calls may run in parallel to reduce latency; write tools stay sequential for safety
+
+**Built-in file tools (verification & ergonomics)**:
+
+- `list_files` accepts **`pattern` or `name`** for glob filtering (pick one; `name` matches `find_files` naming so models are less likely to pass invalid kwargs).
+- `write_file` success output includes a **short preview of the first lines** of the written content so you can align chat claims with disk state quickly.
+- Wrong tool kwargs often return a **short parameter hint** (allowed names vs keys sent) instead of only a long traceback.
+
+Background write-up: [docs/INCIDENT_REPORT_CLI_HALLUCINATION_AND_TOOL_MISMATCH.md](docs/INCIDENT_REPORT_CLI_HALLUCINATION_AND_TOOL_MISMATCH.md).
 
 ---
 
@@ -532,7 +541,7 @@ Because each instance runs from its own directory, there is **no git or file con
 
 ### 3. Parallel background tasks — Within a single project
 
-Use the `**spawn_agent` tool** (called by the LLM) when one project needs multiple AI models working in parallel on different subtasks.
+Use the **`spawn_agent`** tool (called by the LLM) when one project needs multiple AI models working in parallel on different subtasks.
 
 - Runs as background threads within the same process
 - Each subtask is routed to **primary / fast / daily** by task type (`spawn_routing`), unless the user overrides `model_index`
@@ -557,7 +566,7 @@ One sub-agent Bot (project workspace)
 | Scenario                                                                | Recommended                      |
 | ----------------------------------------------------------------------- | -------------------------------- |
 | Different daily topics, just need isolated chat                         | **Topics**                       |
-| Large document / research project — multiple models working in parallel | `**spawn_agent`**                |
+| Large document / research project — multiple models working in parallel | **`spawn_agent`**                |
 | Deliver a project: build → git commit → deploy to cloud                 | **Sub-agent Bot** (`/new_agent`) |
 
 
@@ -565,7 +574,7 @@ One sub-agent Bot (project workspace)
 
 - Work is *conversational or research-based* with no dedicated git repo → **Topics**
 - Work produces a *deliverable* (code, app, git repo, cloud deployment) → **Sub-agent Bot**
-- Within that project, needs *parallel AI workstreams* (research + writing + review simultaneously) → `**spawn_agent`** inside the Sub-agent Bot
+- Within that project, needs *parallel AI workstreams* (research + writing + review simultaneously) → **`spawn_agent`** inside the Sub-agent Bot
 
 ## Tools reference
 

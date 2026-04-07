@@ -29,8 +29,8 @@
 | `execute_python` | 執行 Python 程式碼（變數跨次呼叫保留） |
 | `execute_shell` | 執行 Shell 指令，支援 timeout 與 cwd |
 | `read_file` | 讀取本地檔案，支援 offset / limit 分頁 |
-| `write_file` | 寫入或追加本地檔案 |
-| `list_files` | 列出目錄內容（支援 glob pattern） |
+| `write_file` | 寫入或追加本地檔案；成功時回傳含內容前幾行預覽，利於驗證 |
+| `list_files` | 列出目錄內容；**`pattern` 與 `name` 擇一** 作 glob（`name` 與 `find_files` 參數名一致） |
 | `grep_search` | 以正則搜尋檔案內容（優先 `rg`，後備 `grep`） |
 | `find_files` | 以 glob 模式搜尋檔案／目錄名稱 |
 | `install_package` | `pip install` 安裝 Python 套件 |

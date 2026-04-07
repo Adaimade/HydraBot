@@ -153,6 +153,7 @@ hydrabot update               # 更新到最新版
 - **快速上手與 PATH**：[QUICKSTART.md](QUICKSTART.md)
 - **英文說明**：[README.md](README.md)
 - **工具參考（內建一覽、品質工具、自訂工具）**：[TOOLS.zh-TW.md](TOOLS.zh-TW.md) · [TOOLS.md](TOOLS.md)
+- **CLI 檔案工具行為與事件報告**：[docs/INCIDENT_REPORT_CLI_HALLUCINATION_AND_TOOL_MISMATCH.md](docs/INCIDENT_REPORT_CLI_HALLUCINATION_AND_TOOL_MISMATCH.md)
 - **人格規則**：[SOUL.md](SOUL.md)
 - **設定範本**：[config.example.json](config.example.json)
 
@@ -282,6 +283,14 @@ CLI 內建指令：
 - CLI 串流輸出（逐 chunk 顯示）
 - `--dry-run` 預覽工具呼叫（零副作用）
 - 唯讀類工具可能並行執行以降低延遲；寫入類工具維持循序以確保安全
+
+**檔案相關內建工具（驗證與易用性）**：
+
+- `list_files` 可用 **`pattern` 或 `name`** 擇一做 glob 篩選（`name` 與 `find_files` 參數名一致，降低誤傳參導致失敗）。
+- `write_file` 成功時除「已寫入」外，會附**寫入內容前幾行預覽**，便於對照磁碟與對話宣稱。
+- 工具參數名錯誤時，常會得到**短提示**（可接受參數名／本次傳入鍵），而非僅長篇 traceback。
+
+事件背景與分析：[docs/INCIDENT_REPORT_CLI_HALLUCINATION_AND_TOOL_MISMATCH.md](docs/INCIDENT_REPORT_CLI_HALLUCINATION_AND_TOOL_MISMATCH.md)。
 
 ---
 

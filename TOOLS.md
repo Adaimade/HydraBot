@@ -29,8 +29,8 @@ Related `config.json` keys: `enforce_gate_policy`, `gate_forbidden_in_qa`, `requ
 | `execute_python` | Execute Python code (variables persist across calls) |
 | `execute_shell` | Execute shell commands with timeout and cwd support |
 | `read_file` | Read local files with offset/limit pagination |
-| `write_file` | Write or append to local files |
-| `list_files` | List directory contents (supports glob patterns) |
+| `write_file` | Write or append to local files; success output includes a short preview of the first lines for verification |
+| `list_files` | List directory contents; use **`pattern` or `name`** (pick one) as the glob — `name` matches `find_files` naming |
 | `grep_search` | Regex search in files (`rg` preferred, fallback `grep`) |
 | `find_files` | Find files/directories by glob pattern |
 | `install_package` | Install Python packages via `pip install` |
