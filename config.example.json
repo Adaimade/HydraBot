@@ -90,6 +90,21 @@
     "model_name": "claude-sonnet-4-6"
   },
 
+  "_註解_polymarket_engine": "Polymarket↔Binance 異常偵測引擎；獨立程序執行 python -m polymarket_engine.cli collect。所有欄位都有預設值，只要保留物件即可。",
+  "polymarket_engine": {
+    "data_dir": "data",
+    "heartbeat_path": "data/heartbeat.json",
+    "underlyings": ["BTCUSDT", "ETHUSDT"],
+    "edge_threshold_bps": 500,
+    "min_persist_ms": 2000,
+    "cooldown_ms": 15000,
+    "max_pm_spread": 0.10,
+    "min_ttm_hours": 1.0,
+    "vol_window_min": 60,
+    "report_time_utc": "00:30",
+    "max_markets": 60
+  },
+
   "_其他provider示例": {
     "openai_compatible": {
       "provider": "openai",

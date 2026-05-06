@@ -571,6 +571,10 @@ One sub-agent Bot (project workspace)
 
 HydraBot exposes filesystem, shell, scheduling, MCP, memory, sub-agents, and self-expansion tools. **Full built-in catalog, optional quality helpers under `tools/`, and the custom-tool Python format:** [TOOLS.md](TOOLS.md) · [TOOLS.zh-TW.md](TOOLS.zh-TW.md).
 
+### Optional: Polymarket anomaly engine
+
+`polymarket_engine/` is an optional, separately-launched 24/7 collector that watches Polymarket BTC/ETH price-target markets alongside Binance USDT-perps and surfaces latency-arb anomalies. It registers two read-only tools (`pm_anomaly_status`, `pm_daily_report`) via `tools/polymarket.py`. See [polymarket_engine/README.md](polymarket_engine/README.md) for setup; install the optional deps with `pip install -r requirements.txt` (websockets, aiohttp, pyarrow) and launch the collector under tmux/systemd: `python -m polymarket_engine.cli collect`.
+
 ---
 
 ## Bot Persona (SOUL.md)
